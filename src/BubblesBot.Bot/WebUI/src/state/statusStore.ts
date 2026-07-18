@@ -1,0 +1,81 @@
+import { create } from "zustand";
+import type { BotStatus } from "../api/types";
+
+export type ConnectionState = "connecting" | "live" | "polling" | "disconnected";
+
+interface StatusStore {
+  connection: ConnectionState;
+  status: BotStatus | null;
+}
+
+export const useStatusStore = create<StatusStore>(() => ({
+  connection: "connecting",
+  status: null,
+}));
+
+let started = false;
+
+/**
+ * Live status feed. Prefers the 10 Hz WebSocket; if the socket can't be established (e.g. the
+ * bot is on its raw-TCP fallback transport, which has no /ws), it degrades to polling
+ * /api/status. Call once at app start.
+ */
+export function startStatusSocket(): void {
+  if (started) return;
+  started = true;
+  connectSocket(0);
+}
+
+function connectSocket(failures: number): void {
+  // After two failed socket attempts (no /ws), give up on WS and poll instead.
+  if (failures >= 2) {
+    startPolling();
+    return;
+  }
+
+  const proto = location.protocol === "https:" ? "wss:" : "ws:";
+  let opened = false;
+  const ws = new WebSocket(`${proto}//${location.host}/ws`);
+  useStatusStore.setState({ connection: "connecting" });
+
+  ws.onopen = () => { opened = true; useStatusStore.setState({ connection: "live" }); };
+  ws.onmessage = (e) => {
+    try { useStatusStore.setState({ status: JSON.parse(e.data) as BotStatus }); }
+    catch { /* skip malformed frame */ }
+  };
+  ws.onerror = () => ws.close();
+  ws.onclose = () => {
+    if (opened) {
+      // A previously-working socket dropped — reconnect fresh (failure count resets).
+      useStatusStore.setState({ connection: "disconnected" });
+      setTimeout(() => connectSocket(0), 1000);
+    } else {
+      // Never opened — likely no WS endpoint. Count toward the polling cutover.
+      setTimeout(() => connectSocket(failures + 1), 500);
+    }
+  };
+}
+
+let polling = false;
+
+function startPolling(): void {
+  if (polling) return;
+  polling = true;
+  useStatusStore.setState({ connection: "polling" });
+
+  const tick = async () => {
+    try {
+      const response = await fetch("/api/status");
+      if (response.ok) {
+        useStatusStore.setState({ status: (await response.json()) as BotStatus, connection: "polling" });
+      } else {
+        useStatusStore.setState({ connection: "disconnected" });
+      }
+    } catch {
+      useStatusStore.setState({ connection: "disconnected" });
+    }
+  };
+
+  void tick();
+  setInterval(tick, 500);
+}
