@@ -165,6 +165,15 @@ public sealed class MapDeviceSystem
                  : CurrentPhase == Phase.Failed ? Result.Failed
                  : Result.InProgress;
 
+        // Continuously update the set of pre-existing portals right up until we try to activate
+        // the new map. This prevents a race condition where MapDeviceSystem.Start() is called
+        // immediately upon entering Hideout before the server has spawned the old portal entities,
+        // causing those old portals to be mistakenly identified as the newly spawned ones later.
+        if (CurrentPhase < Phase.Activate)
+        {
+            CapturePreFlowPortals(ctx);
+        }
+
         // Phase timeout (portal wait gets its own).
         var phaseAge = (BotMonotonicClock.Now - _phaseStartedAt).TotalSeconds;
         var timeout  = CurrentPhase switch
