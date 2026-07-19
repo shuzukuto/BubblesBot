@@ -66,6 +66,7 @@ public sealed class SimulacrumRunMode : IBotMode
     private bool _discardExistingRun;
     private string _supplyTarget = "none";
     private bool _stopped;
+    private bool _deviceStorageChecked;
     private string _stopReason = string.Empty;
     private string _runId = Guid.NewGuid().ToString("N");
 
@@ -210,9 +211,11 @@ public sealed class SimulacrumRunMode : IBotMode
         _arenaAreaHash = 0;
         _runsStarted = 0;
         _runsCompleted = 0;
+        _deviceStorageChecked = false;
         _lastKnownInventoryCells = 0;
         _lastKnownInventoryCellsKnown = false;
         _carriedSupplies = 0;
+        _deviceStorageChecked = false;
         _supplyCommittedToDevice = false;
         _supplyClickAttempts = 0;
         _lastSupplyActionAt = TimeSpan.MinValue;
@@ -336,10 +339,12 @@ public sealed class SimulacrumRunMode : IBotMode
                     Diagnostics.EventSeverity.Info,
                     "fresh-start request began in hideout; ignoring existing portal set");
             }
-            _step = Step.Supply;
+            _step = Step.Device;
+            _deviceStorageChecked = false;
+            _device.Start(ctx.Entities, MapDeviceSystem.PayloadSource.InventorySimulacrum);
             LastDecision = ctx.Settings.SimulacrumDiscardExistingRun
-                ? "Boot/Supply: discard request bypassed existing portals"
-                : "Boot/Supply: hideout ready";
+                ? "Boot/Device: discard request bypassed existing portals"
+                : "Boot/Device: hideout ready, checking map device storage";
             return;
         }
         LastDecision = "Boot: waiting for hideout or Simulacrum evidence";
@@ -549,6 +554,14 @@ public sealed class SimulacrumRunMode : IBotMode
         }
         if (result == MapDeviceSystem.Result.Failed)
         {
+            if (!_deviceStorageChecked && _device.Status.Contains("no Simulacrum"))
+            {
+                _deviceStorageChecked = true;
+                _step = Step.Supply;
+                _device.Cancel();
+                LastDecision = "Device/Supply: device storage empty, falling back to stash";
+                return;
+            }
             Stop($"Simulacrum device failed: {_device.Status}");
             return;
         }
@@ -590,8 +603,10 @@ public sealed class SimulacrumRunMode : IBotMode
             _device.Cancel();
             _entryTransition.Reset();
             _exitTransition.Reset();
-            _step = Step.Supply;
-            LastDecision = $"Arena/Supply: run {_runsCompleted} complete";
+            _step = Step.Device;
+            _deviceStorageChecked = false;
+            _device.Start(ctx.Entities, MapDeviceSystem.PayloadSource.InventorySimulacrum);
+            LastDecision = $"Arena/Device: run {_runsCompleted} complete, checking map device storage";
             return;
         }
 
@@ -800,8 +815,10 @@ public sealed class SimulacrumRunMode : IBotMode
         _recoveryOriginAreaHash = 0;
         _returnThroughPortal.Reset();
         _discardExistingRun = false;
-        _step = Step.Supply;
-        LastDecision = "Discard/Supply: old arena exited; starting fresh supplied run";
+        _step = Step.Device;
+        _deviceStorageChecked = false;
+        _device.Start(null!, MapDeviceSystem.PayloadSource.InventorySimulacrum);
+        LastDecision = "Discard/Device: successfully discarded portal, checking map device storage";
         Diagnostics.EventLog.Emit(
             "simulacrum", "simulacrum.discard-completed",
             Diagnostics.EventSeverity.Info, LastDecision,

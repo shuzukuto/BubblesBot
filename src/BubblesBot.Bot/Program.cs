@@ -4,6 +4,11 @@ using BubblesBot.Core;
 using BubblesBot.Core.Snapshot;
 
 var liveTestParse = LiveTestOptions.Parse(args);
+
+[System.Runtime.InteropServices.DllImport("user32.dll", SetLastError = true)]
+static extern bool SetProcessDPIAware();
+try { SetProcessDPIAware(); } catch { }
+
 if (!liveTestParse.Success)
 {
     Console.Error.WriteLine(liveTestParse.Error);

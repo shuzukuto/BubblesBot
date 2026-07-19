@@ -9,19 +9,17 @@ namespace BubblesBot.Bot.Input;
 internal static class SendInputNative
 {
     public static void MoveCursor(int absX, int absY)
-        => SetCursorPos(absX, absY);
+    {
+        BubblesBot.Bot.Diagnostics.EventLog.Log("Input", $"Moving cursor to absX={absX}, absY={absY}");
+        SetCursorPos(absX, absY);
+    }
 
     public static void LeftClick()
     {
-        Span<INPUT> down = stackalloc INPUT[1];
-        down[0] = MouseInput(MOUSEEVENTF_LEFTDOWN);
-        Send(down);
-        
-        System.Threading.Thread.Sleep(20);
-        
-        Span<INPUT> up = stackalloc INPUT[1];
-        up[0] = MouseInput(MOUSEEVENTF_LEFTUP);
-        Send(up);
+        Span<INPUT> inputs = stackalloc INPUT[2];
+        inputs[0] = MouseInput(MOUSEEVENTF_LEFTDOWN);
+        inputs[1] = MouseInput(MOUSEEVENTF_LEFTUP);
+        Send(inputs);
     }
 
     /// <summary>
@@ -46,15 +44,18 @@ internal static class SendInputNative
 
     public static void KeyTap(int vk)
     {
-        Span<INPUT> down = stackalloc INPUT[1];
-        down[0] = IsMouseButton(vk) ? MouseButton(vk, down: true) : KeyInput((ushort)vk, keyUp: false);
-        Send(down);
-
-        System.Threading.Thread.Sleep(20);
-
-        Span<INPUT> up = stackalloc INPUT[1];
-        up[0] = IsMouseButton(vk) ? MouseButton(vk, down: false) : KeyInput((ushort)vk, keyUp: true);
-        Send(up);
+        Span<INPUT> inputs = stackalloc INPUT[2];
+        if (IsMouseButton(vk))
+        {
+            inputs[0] = MouseButton(vk, down: true);
+            inputs[1] = MouseButton(vk, down: false);
+        }
+        else
+        {
+            inputs[0] = KeyInput((ushort)vk, keyUp: false);
+            inputs[1] = KeyInput((ushort)vk, keyUp: true);
+        }
+        Send(inputs);
     }
 
     /// <summary>Tap a hardware scan code. Some PoE system-layer controls consume DirectInput/

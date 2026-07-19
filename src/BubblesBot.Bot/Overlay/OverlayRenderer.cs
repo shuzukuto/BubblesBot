@@ -887,8 +887,6 @@ public sealed class OverlayRenderer : IDisposable
             var cardRight  = cx + CardW * 0.5f;
             var cardBottom = cy;
             var bgRect = new Vortice.RawRectF(cardLeft, cardTop, cardRight, cardBottom);
-            rt.FillRectangle(bgRect, _bPanel!);
-            rt.DrawRectangle(bgRect, border, 1.5f);
 
             // Name (centered).
             var nameRect = new Vortice.RawRectF(cardLeft + 4, cardTop + 1, cardRight - 4, cardTop + CardH - HpBarH - 1);

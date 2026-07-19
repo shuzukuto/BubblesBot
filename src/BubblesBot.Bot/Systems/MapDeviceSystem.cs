@@ -126,16 +126,7 @@ public sealed class MapDeviceSystem
 
         // Snapshot existing portals so post-activate detection only fires on NEW ones.
         _preFlowPortalIds.Clear();
-        if (entities is not null)
-        {
-            foreach (var e in entities.Entries.Values)
-            {
-                if (string.IsNullOrEmpty(e.Path)) continue;
-                if (!e.Path.Contains("Portal", StringComparison.OrdinalIgnoreCase)) continue;
-                if (e.Path.Contains("/BlightPortal", StringComparison.Ordinal)) continue;
-                _preFlowPortalIds.Add(e.Id);
-            }
-        }
+        CapturePreFlowPortals(entities);
 
         Status = "navigating to map device";
         BubblesBot.Bot.Diagnostics.EventLog.Log("MapDevice",
@@ -148,6 +139,23 @@ public sealed class MapDeviceSystem
         _movement.Release();
         _approach.Reset();
         Status = "cancelled";
+    }
+
+    private void CapturePreFlowPortals(EntityCache? entities)
+    {
+        if (entities is null) return;
+        foreach (var e in entities.Entries.Values)
+        {
+            if (string.IsNullOrEmpty(e.Path)) continue;
+            if (!e.Path.Contains("Portal", StringComparison.OrdinalIgnoreCase)) continue;
+            if (e.Path.Contains("/BlightPortal", StringComparison.Ordinal)) continue;
+            _preFlowPortalIds.Add(e.Id);
+        }
+    }
+
+    private void CapturePreFlowPortals(BehaviorContext ctx)
+    {
+        CapturePreFlowPortals(ctx.Entities);
     }
 
     public Result Tick(BehaviorContext ctx)
@@ -540,6 +548,7 @@ public sealed class MapDeviceSystem
                     Status = "closing inventory before activate";
                 return Result.InProgress;
             }
+            CapturePreFlowPortals(ctx);
             return Advance(Phase.Activate, "Simulacrum staged - clicking activate");
         }
 
@@ -612,8 +621,8 @@ public sealed class MapDeviceSystem
         var rect = target.Rect;
         var (sx, sy) = ctx.Snapshot.Window.ToScreen(
             (int)rect.CenterX, (int)rect.CenterY);
-        var ticket = ctx.Input.RightClick(
-            sx, sy, ClickIntent.InteractUi, "insert Simulacrum",
+        var ticket = ctx.Input.ModifierClick(
+            sx, sy, [VK_LCONTROL], ClickIntent.InteractUi, "insert Simulacrum",
             expectResolved: () => _getSnapshot()?.AtlasPanel is { } liveAtlas
                 && liveAtlas.IsDevicePanelVisible()
                 && liveAtlas.DeviceSlot(0) is { IsOccupied: true },
@@ -622,11 +631,11 @@ public sealed class MapDeviceSystem
         {
             _clickAttempts++;
             _lastActionAt = BotMonotonicClock.Now;
-            Status = $"right-clicked Simulacrum ({_clickAttempts}/{MaxClickAttempts})";
+            Status = $"ctrl-clicked Simulacrum ({_clickAttempts}/{MaxClickAttempts})";
             BubblesBot.Bot.Diagnostics.EventLog.Emit(
                 "simulacrum", "simulacrum.device-insert-requested",
                 BubblesBot.Bot.Diagnostics.EventSeverity.Info,
-                "right-clicked Simulacrum from atlas-side storage",
+                "ctrl-clicked Simulacrum from atlas-side storage",
                 new Dictionary<string, object?>
                 {
                     ["source"] = "atlas-storage",
@@ -959,7 +968,9 @@ public sealed class MapDeviceSystem
             if (reader.TryReadStruct<Vector3>(target.RenderCompAddr + KnownOffsets.RenderComponent.Pos, out var rPos)
              && reader.TryReadStruct<Vector3>(target.RenderCompAddr + KnownOffsets.RenderComponent.Bounds, out var rBounds))
             {
-                var centerWorld = new Vector3 { X = rPos.X + rBounds.X * 0.5f, Y = rPos.Y + rBounds.Y * 0.5f, Z = rPos.Z + rBounds.Z * 0.5f };
+                // Push Z up to 75% of bounds height (instead of 50%) to hit the upper part of the portal
+                // where the clickable mesh/label usually sits, preventing missed clicks.
+                var centerWorld = new Vector3 { X = rPos.X + rBounds.X * 0.5f, Y = rPos.Y + rBounds.Y * 0.5f, Z = rPos.Z + rBounds.Z * 0.75f };
                 center = cam.WorldToScreen(centerWorld);
             }
         }
