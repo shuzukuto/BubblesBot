@@ -773,7 +773,7 @@ public sealed class SimulacrumRunMode : IBotMode
 
         var arenaRole = WorldAreaClassifier.Classify(ctx);
         if (ctx.Snapshot.AreaHash == 0
-            || ctx.Snapshot.AreaHash == _recoveryOriginAreaHash
+            || ctx.Snapshot.AreaHash != _arenaAreaHash
             || arenaRole == AreaRole.SafeHub)
         {
             LastDecision = $"Recovery/Return: awaiting arena (area 0x{ctx.Snapshot.AreaHash:X8}, {arenaRole})";
