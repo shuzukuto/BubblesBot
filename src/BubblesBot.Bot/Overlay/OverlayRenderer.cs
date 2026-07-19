@@ -175,8 +175,8 @@ public sealed class OverlayRenderer : IDisposable
             DrawHpBars(rt, ctx);
             DrawUniqueValueLabels(rt, ctx);
             DrawTargetBox(rt, ctx);
-            DrawHudPanel(rt, ctx);
-            DrawEventLogPanel(rt, ctx);
+            var nextY = DrawHudPanel(rt, ctx);
+            DrawEventLogPanel(rt, ctx, nextY);
             DrawGuidanceHud(rt, ctx);
         }
         finally
@@ -1112,13 +1112,13 @@ public sealed class OverlayRenderer : IDisposable
     /// decision lines (reveal %, hostile census, current target, movement decision). Drawn
     /// mid-left where PoE keeps no fixed UI, so it's readable during normal play.
     /// </summary>
-    private void DrawHudPanel(ID2D1RenderTarget rt, RenderContext ctx)
+    private float DrawHudPanel(ID2D1RenderTarget rt, RenderContext ctx)
     {
         var stateLine = ctx.Enable?.StateLabel;
         var modeLines = ctx.Hud;
-        if (stateLine is null && modeLines is not { Count: > 0 }) return;
+        if (stateLine is null && modeLines is not { Count: > 0 }) return 60f;
 
-        const float x = 12f, y = 260f, lineH = 17f, padX = 8f, padY = 6f, w = 360f;
+        const float x = 12f, y = 60f, lineH = 17f, padX = 8f, padY = 6f, w = 360f;
         var count = (stateLine is null ? 0 : 1) + (modeLines?.Count ?? 0);
         var h = padY * 2 + lineH * count;
 
@@ -1128,17 +1128,19 @@ public sealed class OverlayRenderer : IDisposable
         if (modeLines is not null)
             foreach (var line in modeLines)
                 ShadowText(rt, line, _tfNormal!, _bDim!, _bPanel!, x + padX, y + padY + lineH * row++, w - padX * 2, lineH);
+
+        return y + h + 10f;
     }
 
     /// <summary>
-    /// Displays the recent EventLog entries at the top left of the screen.
+    /// Displays the recent EventLog entries below the HUD panel.
     /// </summary>
-    private void DrawEventLogPanel(ID2D1RenderTarget rt, RenderContext ctx)
+    private void DrawEventLogPanel(ID2D1RenderTarget rt, RenderContext ctx, float startY)
     {
         var entries = BubblesBot.Bot.Diagnostics.EventLog.Recent(15);
         if (entries.Count == 0) return;
 
-        const float x = 12f, y = 12f, lineH = 15f, padX = 8f, padY = 6f, w = 500f;
+        float x = 12f, y = startY, lineH = 15f, padX = 8f, padY = 6f, w = 500f;
         var h = padY * 2 + lineH * entries.Count;
 
         var row = 0;
