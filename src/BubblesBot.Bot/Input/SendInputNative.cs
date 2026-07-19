@@ -10,7 +10,6 @@ internal static class SendInputNative
 {
     public static void MoveCursor(int absX, int absY)
     {
-        BubblesBot.Bot.Diagnostics.EventLog.Log("Input", $"Moving cursor to absX={absX}, absY={absY}");
         SetCursorPos(absX, absY);
     }
 
