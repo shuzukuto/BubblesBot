@@ -345,19 +345,30 @@ public sealed class SimulacrumMode : IBotMode
         ObserveActiveEdge(active, wave, ctx);
         if (firstFreshActiveObservation && !active.IsTrue && wave > 0)
         {
-            // We may have crashed before a newly-visible reward was checkpointed. A restart
-            // between waves therefore owes one physical arena sweep even when the durable
-            // pending set is empty.
-            _reattachRewardSweepRequired = true;
-            _exploration.Reset();
-            _controller.ResumeBetweenWaves(BotMonotonicClock.Now);
-            _canStartWaveAt = BotMonotonicClock.Now +
-                TimeSpan.FromSeconds(ctx.Settings.SimulacrumMinWaveDelaySeconds);
-            Diagnostics.EventLog.Emit(
-                "simulacrum", "simulacrum.reattach-between-waves",
-                Diagnostics.EventSeverity.Info,
-                $"reattached after wave {wave}; recover rewards before next start",
-                new Dictionary<string, object?> { ["wave"] = wave });
+            if (wave >= MaxWaves)
+            {
+                Diagnostics.EventLog.Emit(
+                    "simulacrum", "simulacrum.reattach-completed",
+                    Diagnostics.EventSeverity.Info,
+                    $"reattached to fully completed Simulacrum (wave {wave}); bypassing sweep",
+                    new Dictionary<string, object?> { ["wave"] = wave });
+            }
+            else
+            {
+                // We may have crashed before a newly-visible reward was checkpointed. A restart
+                // between waves therefore owes one physical arena sweep even when the durable
+                // pending set is empty.
+                _reattachRewardSweepRequired = true;
+                _exploration.Reset();
+                _controller.ResumeBetweenWaves(BotMonotonicClock.Now);
+                _canStartWaveAt = BotMonotonicClock.Now +
+                    TimeSpan.FromSeconds(ctx.Settings.SimulacrumMinWaveDelaySeconds);
+                Diagnostics.EventLog.Emit(
+                    "simulacrum", "simulacrum.reattach-between-waves",
+                    Diagnostics.EventSeverity.Info,
+                    $"reattached after wave {wave}; recover rewards before next start",
+                    new Dictionary<string, object?> { ["wave"] = wave });
+            }
         }
 
         // Cached StateMachine values cannot end a wave. While the monolith is outside the
