@@ -182,6 +182,12 @@ public sealed class SimulacrumController
 
     private SimulacrumDecision TickLooting(SimulacrumFrame frame)
     {
+        if (frame.WaveActive.Truth == ObservationTruth.True)
+        {
+            Transition(SimulacrumPhase.Fighting, frame.Now);
+            return Decision(SimulacrumCommand.Fight, $"wave {frame.Wave} active");
+        }
+
         if (frame.InventoryNeedsDeposit)
         {
             Transition(SimulacrumPhase.Depositing, frame.Now);
@@ -207,6 +213,12 @@ public sealed class SimulacrumController
 
     private SimulacrumDecision TickDepositing(SimulacrumFrame frame)
     {
+        if (frame.WaveActive.Truth == ObservationTruth.True)
+        {
+            Transition(SimulacrumPhase.Fighting, frame.Now);
+            return Decision(SimulacrumCommand.Fight, $"wave {frame.Wave} active");
+        }
+
         if (frame.InventoryNeedsDeposit)
             return Decision(SimulacrumCommand.Deposit, "deposit still required");
         Transition(SimulacrumPhase.Looting, frame.Now);
