@@ -1122,15 +1122,12 @@ public sealed class OverlayRenderer : IDisposable
         var count = (stateLine is null ? 0 : 1) + (modeLines?.Count ?? 0);
         var h = padY * 2 + lineH * count;
 
-        FillRect(rt, x, y, w, h, _bPanel!);
-        DrawRect(rt, x, y, w, h, _bBorder!, 1f);
-
         var row = 0;
         if (stateLine is not null)
-            Text(rt, stateLine, _tfNormal!, _bText!, x + padX, y + padY + lineH * row++, w - padX * 2, lineH);
+            ShadowText(rt, stateLine, _tfNormal!, _bText!, _bPanel!, x + padX, y + padY + lineH * row++, w - padX * 2, lineH);
         if (modeLines is not null)
             foreach (var line in modeLines)
-                Text(rt, line, _tfNormal!, _bDim!, x + padX, y + padY + lineH * row++, w - padX * 2, lineH);
+                ShadowText(rt, line, _tfNormal!, _bDim!, _bPanel!, x + padX, y + padY + lineH * row++, w - padX * 2, lineH);
     }
 
     /// <summary>
@@ -1144,9 +1141,6 @@ public sealed class OverlayRenderer : IDisposable
         const float x = 12f, y = 12f, lineH = 15f, padX = 8f, padY = 6f, w = 500f;
         var h = padY * 2 + lineH * entries.Count;
 
-        FillRect(rt, x, y, w, h, _bPanel!);
-        DrawRect(rt, x, y, w, h, _bBorder!, 1f);
-
         var row = 0;
         foreach (var entry in entries)
         {
@@ -1158,7 +1152,7 @@ public sealed class OverlayRenderer : IDisposable
                 _ => _bDim!
             };
             var text = $"[{entry.At:HH:mm:ss}] [{entry.Category}] {entry.Message}";
-            Text(rt, text, _tfSmall!, brush, x + padX, y + padY + lineH * row++, w - padX * 2, lineH);
+            ShadowText(rt, text, _tfSmall!, brush, _bPanel!, x + padX, y + padY + lineH * row++, w - padX * 2, lineH);
         }
     }
 
@@ -1169,6 +1163,17 @@ public sealed class OverlayRenderer : IDisposable
 
     private void DrawRect(ID2D1RenderTarget rt, float x, float y, float w, float h, ID2D1SolidColorBrush brush, float stroke = 1f)
         => rt.DrawRectangle(Box(x, y, w, h), brush, stroke);
+
+    private static void ShadowText(ID2D1RenderTarget rt, string text, IDWriteTextFormat fmt,
+        ID2D1SolidColorBrush brush, ID2D1SolidColorBrush shadowBrush, float x, float y, float w, float h)
+    {
+        // Draw a simple 1px outline for readability without a panel background
+        rt.DrawText(text, fmt, new Rect(x - 1, y - 1, w, h), shadowBrush, DrawTextOptions.Clip);
+        rt.DrawText(text, fmt, new Rect(x + 1, y - 1, w, h), shadowBrush, DrawTextOptions.Clip);
+        rt.DrawText(text, fmt, new Rect(x - 1, y + 1, w, h), shadowBrush, DrawTextOptions.Clip);
+        rt.DrawText(text, fmt, new Rect(x + 1, y + 1, w, h), shadowBrush, DrawTextOptions.Clip);
+        rt.DrawText(text, fmt, new Rect(x, y, w, h), brush, DrawTextOptions.Clip);
+    }
 
     private static void Text(ID2D1RenderTarget rt, string text, IDWriteTextFormat fmt,
         ID2D1SolidColorBrush brush, float x, float y, float w, float h)
