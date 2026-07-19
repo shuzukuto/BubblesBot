@@ -565,6 +565,22 @@ public sealed class SimulacrumRunMode : IBotMode
                 LastDecision = "Device/Supply: device storage empty, falling back to stash";
                 return;
             }
+
+            var role = WorldAreaClassifier.Classify(ctx);
+            if (_device.Status.Contains("entity disappeared") && role != AreaRole.SafeHub)
+            {
+                // We misclicked a portal while trying to interact with the map device.
+                _step = Step.Recover;
+                _recoveryLeg = RecoveryLeg.ExitArena;
+                _recoveryOriginAreaHash = ctx.Snapshot.AreaHash;
+                _recoveryStartedAt = AreaTransitionTracker.MonotonicNow();
+                _returnThroughPortal.Reset();
+                _discardExistingRun = true;
+                _recoveryReason = "accidental-portal-click";
+                LastDecision = "Device: accidental portal click detected; exiting to hideout";
+                return;
+            }
+
             Stop($"Simulacrum device failed: {_device.Status}");
             return;
         }

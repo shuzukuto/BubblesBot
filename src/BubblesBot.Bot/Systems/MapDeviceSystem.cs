@@ -968,9 +968,12 @@ public sealed class MapDeviceSystem
             if (reader.TryReadStruct<Vector3>(target.RenderCompAddr + KnownOffsets.RenderComponent.Pos, out var rPos)
              && reader.TryReadStruct<Vector3>(target.RenderCompAddr + KnownOffsets.RenderComponent.Bounds, out var rBounds))
             {
-                // Push Z up to 75% of bounds height (instead of 50%) to hit the upper part of the portal
+                // Push Z up to 75% of bounds height for portals to hit the upper part of the portal
                 // where the clickable mesh/label usually sits, preventing missed clicks.
-                var centerWorld = new Vector3 { X = rPos.X + rBounds.X * 0.5f, Y = rPos.Y + rBounds.Y * 0.5f, Z = rPos.Z + rBounds.Z * 0.75f };
+                // For Map Devices, we use 25% (near the base) to avoid hitting the portal hitboxes
+                // that overlap and hover above the map device center.
+                var zRatio = target.Path.Contains("MapDevice") ? 0.25f : 0.75f;
+                var centerWorld = new Vector3 { X = rPos.X + rBounds.X * 0.5f, Y = rPos.Y + rBounds.Y * 0.5f, Z = rPos.Z + rBounds.Z * zRatio };
                 center = cam.WorldToScreen(centerWorld);
             }
         }
