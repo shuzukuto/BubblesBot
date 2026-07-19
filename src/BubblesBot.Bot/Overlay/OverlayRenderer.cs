@@ -1137,7 +1137,9 @@ public sealed class OverlayRenderer : IDisposable
     /// </summary>
     private void DrawEventLogPanel(ID2D1RenderTarget rt, RenderContext ctx, float startY)
     {
-        var entries = BubblesBot.Bot.Diagnostics.EventLog.Recent(15);
+        var entries = BubblesBot.Bot.Diagnostics.EventLog.Recent(100)
+            .Where(e => e.Category == "decision" || e.Severity >= BubblesBot.Bot.Diagnostics.EventSeverity.Error)
+            .TakeLast(15).ToList();
         if (entries.Count == 0) return;
 
         float x = 12f, y = startY, lineH = 15f, padX = 8f, padY = 6f, w = 500f;
@@ -1153,7 +1155,11 @@ public sealed class OverlayRenderer : IDisposable
                 BubblesBot.Bot.Diagnostics.EventSeverity.Warning => _bTarget!,
                 _ => _bDim!
             };
-            var text = $"[{entry.At:HH:mm:ss}] [{entry.Category}] {entry.Message}";
+
+            var time = entry.At.ToString("HH:mm:ss");
+            var text = entry.Category == "decision" 
+                ? $"[{time}] {entry.Message}" 
+                : $"[{time}] [{entry.Category}] {entry.Message}";
             ShadowText(rt, text, _tfSmall!, brush, _bPanel!, x + padX, y + padY + lineH * row++, w - padX * 2, lineH);
         }
     }

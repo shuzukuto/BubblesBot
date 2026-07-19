@@ -94,7 +94,19 @@ public sealed class MapRunMode : IBotMode
 
     public string Name => "Map farming";
     public IBehavior Root => _mapFarming.Root;   // dashboard shows the clear tree (most active sub-flow)
-    public string LastDecision { get; private set; } = "init";
+    private string _lastDecision = "init";
+    public string LastDecision 
+    {
+        get => _lastDecision;
+        private set 
+        {
+            if (_lastDecision != value)
+            {
+                _lastDecision = value;
+                BubblesBot.Bot.Diagnostics.EventLog.Emit("decision", "decision.update", BubblesBot.Bot.Diagnostics.EventSeverity.Info, value);
+            }
+        }
+    }
 
     // ── Telemetry surface (read by BotApp.BuildStatus → "loop" block) ──
     // Telemetry falls back to the store's active strategy so the dashboard shows the selected
