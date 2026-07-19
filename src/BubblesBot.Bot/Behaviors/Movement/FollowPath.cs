@@ -183,7 +183,7 @@ public sealed class FollowPath : IBehavior
                 LastDecision = "no path";
                 return LastStatus = BehaviorStatus.Failure;
             }
-            _path        = PathSmoother.Smooth(pf, raw.Cells);
+            _path        = now < _walkAroundUntil ? raw.Cells : PathSmoother.Smooth(pf, raw.Cells);
             _pathIndex   = 1;        // skip cell 0 (current player position)
             _pathGoal    = goal.Value;
             _pathBuiltAt = now;
@@ -240,6 +240,13 @@ public sealed class FollowPath : IBehavior
             var outcome = RunBlink(ctx, player, stepGrid, $"unstick {_pathIndex}/{_path.Count - 1}");
             if (outcome == BlinkOutcome.Landed) _progress.MarkProgress(player, now);
             else if (outcome == BlinkOutcome.GiveUp) { BeginWalkAround(); _progress.MarkProgress(player, now); }
+            return LastStatus = BehaviorStatus.Running;
+        }
+        else if (stuck)
+        {
+            BeginWalkAround();
+            _progress.MarkProgress(player, now);
+            LastDecision = "stuck without gap-crosser → walk around";
             return LastStatus = BehaviorStatus.Running;
         }
 
