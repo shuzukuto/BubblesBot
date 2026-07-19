@@ -74,6 +74,7 @@ public sealed class SimulacrumRunMode : IBotMode
     public string Name => "Simulacrum farming";
     public IBehavior Root => _arena.Root;
     public string LastDecision { get; private set; } = "init";
+    public IReadOnlyList<string> HudLines => new[] { LastDecision };
     public string RunId => _runId;
     public object Telemetry => new
     {

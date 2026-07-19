@@ -809,6 +809,7 @@ public sealed class BotApp : IDisposable, Web.IControlSurface
         IReadOnlyList<string>? hud = _settings.Current.ActiveMode switch
         {
             4 => _mapRun.HudLines,
+            6 => _simulacrum.HudLines,
             _ => null,
         };
 
