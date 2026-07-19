@@ -32,7 +32,8 @@ public readonly record struct SimulacrumFrame(
     BooleanObservation WaveActive,
     BooleanObservation WaveComplete,
     BooleanObservation RewardsAvailable,
-    bool InventoryNeedsDeposit);
+    bool InventoryNeedsDeposit,
+    bool InventoryFull);
 
 public readonly record struct SimulacrumDecision(
     SimulacrumPhase Phase,
@@ -188,17 +189,24 @@ public sealed class SimulacrumController
             return Decision(SimulacrumCommand.Fight, $"wave {frame.Wave} active");
         }
 
-        if (frame.InventoryNeedsDeposit)
+        if (frame.InventoryFull)
         {
             Transition(SimulacrumPhase.Depositing, frame.Now);
-            return Decision(SimulacrumCommand.Deposit, "inventory deposit threshold reached");
+            return Decision(SimulacrumCommand.Deposit, "inventory is full");
         }
+
         if (frame.RewardsAvailable.Truth == ObservationTruth.Unknown)
             // The adapter must keep scanning while drops settle. Waiting without running the
             // loot behavior would never discover a label that appears after the first tick.
             return Decision(SimulacrumCommand.Loot, "observe/collect rewards until quiet-window evidence resolves");
         if (frame.RewardsAvailable.Truth == ObservationTruth.True)
             return Decision(SimulacrumCommand.Loot, $"loot wave {frame.Wave} rewards");
+
+        if (frame.InventoryNeedsDeposit)
+        {
+            Transition(SimulacrumPhase.Depositing, frame.Now);
+            return Decision(SimulacrumCommand.Deposit, "inventory deposit threshold reached");
+        }
 
         if (frame.Wave >= _maxWaves)
         {

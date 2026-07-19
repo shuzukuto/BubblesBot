@@ -420,7 +420,8 @@ public sealed class SimulacrumMode : IBotMode
             active,
             ObserveComplete(active),
             rewards,
-            InventoryNeedsDeposit(ctx.Settings, wave));
+            InventoryNeedsDeposit(ctx.Settings, wave),
+            InventoryIsFull());
         var decision = _controller.Tick(frame);
         LastDecision = $"{decision.Phase}/{decision.Command}: {decision.Reason}";
         LogDecision(decision, wave);
@@ -625,6 +626,14 @@ public sealed class SimulacrumMode : IBotMode
             return;
         }
 
+        // Mid-wave looting: prioritize picking up dropped items immediately (e.g. from incubators or delirium drops)
+        // rather than waiting for the wave to end.
+        if (_loot.Tick(ctx) == BehaviorStatus.Running || _interact.IsBusy)
+        {
+            _movement.Release();
+            return;
+        }
+
         // Route to the boss/rare FIRST — the nearest rare/unique, targetable or not — so we walk
         // in, mark it, and let trash swarm it (Penance Mark phantasms + Cast-on-X + RF). Only when
         // no rare+ is present do we fall back to the densest pack / nearest hostile. This is the
@@ -784,8 +793,12 @@ public sealed class SimulacrumMode : IBotMode
         else if (_lootRecoverySweep && _exploration.IsExhausted
                  && _pendingRewardLoot.Count > 0)
         {
-            _fatalReason = $"accepted reward remains unreachable after full arena sweep: "
-                + string.Join(", ", _pendingRewardLoot.Values.Select(x => x.Name));
+            Diagnostics.EventLog.Emit("simulacrum", "simulacrum.reward-abandoned",
+                Diagnostics.EventSeverity.Warning,
+                $"accepted reward remains unreachable after full arena sweep, abandoning: "
+                + string.Join(", ", _pendingRewardLoot.Values.Select(x => x.Name)));
+            _pendingRewardLoot.Clear();
+            _lootRecoverySweep = false;
         }
     }
 
@@ -918,6 +931,9 @@ public sealed class SimulacrumMode : IBotMode
             && _inventoryOccupiedCells >= threshold
             && !_depositedWaves.Contains(wave);
     }
+
+    private bool InventoryIsFull()
+        => _inventoryEstimateKnown && _inventoryOccupiedCells >= 60;
 
     private bool NeedsInventorySample(BotSettings settings, int wave)
         => settings.SimulacrumStashOccupiedCells > 0
