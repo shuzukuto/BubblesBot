@@ -434,6 +434,19 @@ public sealed class LootClosestVisible : IBehavior
             SharedLedger?.Record(pending.Name, pending.StackCount, pending.Evaluation);
             PickupConfirmed?.Invoke(new ConfirmedPickup(
                 pending.Name, pending.StackCount, pending.OccupiedCells, pending.Evaluation));
+                
+            try
+            {
+                var appData = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
+                var dir = System.IO.Path.Combine(appData, "BubblesBot", "logs");
+                System.IO.Directory.CreateDirectory(dir);
+                var path = System.IO.Path.Combine(dir, "loot.txt");
+                var valueStr = pending.Evaluation.ChaosValue > 0 ? $" (Value: {pending.Evaluation.ChaosValue:F1}c)" : "";
+                var stackStr = pending.StackCount > 1 ? $"{pending.StackCount}x " : "";
+                var line = $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] Looted: {stackStr}{pending.Name}{valueStr}\n";
+                System.IO.File.AppendAllText(path, line);
+            }
+            catch { }
         }
         _pendingPickup = null;
     }
