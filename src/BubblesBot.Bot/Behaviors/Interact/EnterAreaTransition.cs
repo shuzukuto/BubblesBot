@@ -76,13 +76,22 @@ public sealed class EnterAreaTransition : IBehavior
 
         var label = FindTransitionLabel(ctx, _kindFilter);
         if (label is null)
-            return LastStatus = _approach.Tick(ctx);   // can't see it yet — keep walking toward last known grid
+        {
+            var res = _approach.Tick(ctx);
+            return LastStatus = res == BehaviorStatus.Success ? BehaviorStatus.Running : res;
+        }
 
         if (!IsInClickRange(ctx, label))
-            return LastStatus = _approach.Tick(ctx);
+        {
+            var res = _approach.Tick(ctx);
+            return LastStatus = res == BehaviorStatus.Success ? BehaviorStatus.Running : res;
+        }
 
         if (label.LabelRect is not { } rect)
-            return LastStatus = _approach.Tick(ctx);
+        {
+            var res = _approach.Tick(ctx);
+            return LastStatus = res == BehaviorStatus.Success ? BehaviorStatus.Running : res;
+        }
 
         // Throttle clicks while waiting for the loading screen / hash flip.
         if (BotMonotonicClock.ElapsedSince(_lastClickAt).TotalSeconds < 1.0)

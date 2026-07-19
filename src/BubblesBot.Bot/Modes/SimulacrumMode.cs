@@ -191,7 +191,8 @@ public sealed class SimulacrumMode : IBotMode
             (_, entity) => IsWaveActive(entity));
         _exit = new EnterAreaTransition("simulacrum exit", _interact, _movement,
             _skills, getSnapshot,
-            entity => entity.Kind == EntityListReader.EntityKind.TownPortal,
+            entity => entity.Kind == EntityListReader.EntityKind.TownPortal
+                   || entity.Kind == EntityListReader.EntityKind.Portal,
             _ => _portalAnchor);
         _root = new Behaviors.Action("simulacrum lifecycle", TickLifecycle);
         _controller = CreateController(settings.Current);

@@ -59,6 +59,7 @@ public sealed class SimulacrumRunMode : IBotMode
     // to actually load before latching it (a premature EnterAreaTransition success once latched
     // the hideout hash and hung the run — 2026-07-16 wave-11 incident).
     private bool _reentryPortalEntered;
+    private TimeSpan _reentryAwaitStartedAt = TimeSpan.MinValue;
     private string _recoveryReason = string.Empty;
     private uint _recoveryOriginAreaHash;
     private int _runDeaths;
@@ -232,6 +233,7 @@ public sealed class SimulacrumRunMode : IBotMode
         _deathRecoveryPending = false;
         _discardExistingRun = false;
         _supplyTarget = "none";
+        _reentryAwaitStartedAt = TimeSpan.MinValue;
         _stopped = false;
         _stopReason = string.Empty;
         _runId = Guid.NewGuid().ToString("N");
@@ -766,6 +768,7 @@ public sealed class SimulacrumRunMode : IBotMode
                 return;
             }
             _reentryPortalEntered = true;
+            _reentryAwaitStartedAt = AreaTransitionTracker.MonotonicNow();
             _returnThroughPortal.Reset();
             LastDecision = "Recovery/Return: portal entered; awaiting arena load";
             return;
@@ -776,6 +779,16 @@ public sealed class SimulacrumRunMode : IBotMode
             || ctx.Snapshot.AreaHash != _arenaAreaHash
             || arenaRole == AreaRole.SafeHub)
         {
+            if (_reentryAwaitStartedAt != TimeSpan.MinValue
+                && AreaTransitionTracker.MonotonicNow() - _reentryAwaitStartedAt > TimeSpan.FromSeconds(5))
+            {
+                // The portal click was a false positive, or the instance join failed, leaving us in Hideout.
+                // Reset the portal state to force the behavior to try clicking another portal.
+                _reentryPortalEntered = false;
+                LastDecision = $"Recovery/Return: portal transition failed after 5s; retrying";
+                return;
+            }
+
             LastDecision = $"Recovery/Return: awaiting arena (area 0x{ctx.Snapshot.AreaHash:X8}, {arenaRole})";
             return;
         }
