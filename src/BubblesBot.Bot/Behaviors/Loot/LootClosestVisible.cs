@@ -437,8 +437,7 @@ public sealed class LootClosestVisible : IBehavior
                 
             try
             {
-                var appData = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
-                var dir = System.IO.Path.Combine(appData, "BubblesBot", "logs");
+                var dir = System.IO.Path.Combine(System.IO.Directory.GetCurrentDirectory(), "logs");
                 System.IO.Directory.CreateDirectory(dir);
                 var path = System.IO.Path.Combine(dir, "loot.txt");
                 var valueStr = pending.Evaluation.ChaosValue > 0 ? $" (Value: {pending.Evaluation.ChaosValue:F1}c)" : "";
