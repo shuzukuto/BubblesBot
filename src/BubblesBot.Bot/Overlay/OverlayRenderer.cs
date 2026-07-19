@@ -176,6 +176,7 @@ public sealed class OverlayRenderer : IDisposable
             DrawUniqueValueLabels(rt, ctx);
             DrawTargetBox(rt, ctx);
             DrawHudPanel(rt, ctx);
+            DrawEventLogPanel(rt, ctx);
             DrawGuidanceHud(rt, ctx);
         }
         finally
@@ -1130,6 +1131,35 @@ public sealed class OverlayRenderer : IDisposable
         if (modeLines is not null)
             foreach (var line in modeLines)
                 Text(rt, line, _tfNormal!, _bDim!, x + padX, y + padY + lineH * row++, w - padX * 2, lineH);
+    }
+
+    /// <summary>
+    /// Displays the recent EventLog entries at the top left of the screen.
+    /// </summary>
+    private void DrawEventLogPanel(ID2D1RenderTarget rt, RenderContext ctx)
+    {
+        var entries = BubblesBot.Bot.Diagnostics.EventLog.Recent(15);
+        if (entries.Count == 0) return;
+
+        const float x = 12f, y = 12f, lineH = 15f, padX = 8f, padY = 6f, w = 500f;
+        var h = padY * 2 + lineH * entries.Count;
+
+        FillRect(rt, x, y, w, h, _bPanel!);
+        DrawRect(rt, x, y, w, h, _bBorder!, 1f);
+
+        var row = 0;
+        foreach (var entry in entries)
+        {
+            var brush = entry.Severity switch
+            {
+                BubblesBot.Bot.Diagnostics.EventSeverity.Error => _bHpLow!,
+                BubblesBot.Bot.Diagnostics.EventSeverity.Critical => _bHpLow!,
+                BubblesBot.Bot.Diagnostics.EventSeverity.Warning => _bTarget!,
+                _ => _bDim!
+            };
+            var text = $"[{entry.At:HH:mm:ss}] [{entry.Category}] {entry.Message}";
+            Text(rt, text, _tfSmall!, brush, x + padX, y + padY + lineH * row++, w - padX * 2, lineH);
+        }
     }
 
     // ── helpers ────────────────────────────────────────────────────────────
