@@ -40,7 +40,6 @@ public sealed class InteractWorldEntity : IBehavior
     private TimeSpan _enteredRangeAt = TimeSpan.MinValue;
     private int      _attempts;
     private const int MovementSettleMs = 200;
-    private readonly HashSet<uint> _blacklisted = new();
 
     public string Name { get; }
     public BehaviorStatus LastStatus { get; private set; } = BehaviorStatus.Failure;
@@ -69,7 +68,6 @@ public sealed class InteractWorldEntity : IBehavior
     {
         var target = _targetSelector(ctx);
         if (target is null) { LastDecision = "no target"; return LastStatus = BehaviorStatus.Failure; }
-        if (_blacklisted.Contains(target.Id)) { LastDecision = $"target id={target.Id} is blacklisted"; return LastStatus = BehaviorStatus.Failure; }
 
         // Reset attempt counter when target changes.
         if (target.Id != _currentTargetId)
@@ -143,8 +141,7 @@ public sealed class InteractWorldEntity : IBehavior
             }
             if (_attempts >= MaxClickAttempts)
             {
-                _blacklisted.Add(target.Id);
-                LastDecision = $"blacklisted id={target.Id} after max attempts";
+                LastDecision = $"max attempts on id={target.Id}";
                 return LastStatus = BehaviorStatus.Failure;
             }
 
@@ -224,14 +221,7 @@ public sealed class InteractWorldEntity : IBehavior
         {
             var rPos = target.RenderPosition;
             var rBounds = target.RenderBounds;
-            
-            float zOffset = rBounds.Z * 0.5f;
-            if (!string.IsNullOrEmpty(target.Path) && target.Path.Contains("Blight", StringComparison.OrdinalIgnoreCase))
-            {
-                zOffset = 15f; 
-            }
-            
-            var centerWorld = new Vector3 { X = rPos.X + rBounds.X * 0.5f, Y = rPos.Y + rBounds.Y * 0.5f, Z = rPos.Z + zOffset };
+            var centerWorld = new Vector3 { X = rPos.X + rBounds.X * 0.5f, Y = rPos.Y + rBounds.Y * 0.5f, Z = rPos.Z + rBounds.Z * 0.5f };
             center = cam.WorldToScreen(centerWorld);
         }
 
@@ -299,7 +289,6 @@ public sealed class InteractWorldEntity : IBehavior
         _attempts = 0;
         _lastClickAt = TimeSpan.MinValue;
         _enteredRangeAt = TimeSpan.MinValue;
-        _blacklisted.Clear();
         LastDecision = "reset";
         LastStatus = BehaviorStatus.Failure;
     }

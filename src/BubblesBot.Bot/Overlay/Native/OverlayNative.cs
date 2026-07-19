@@ -1,4 +1,4 @@
-﻿using System.Runtime.InteropServices;
+using System.Runtime.InteropServices;
 
 namespace BubblesBot.Bot.Overlay.Native;
 
@@ -109,6 +109,14 @@ internal static partial class OverlayNative
     [LibraryImport("user32.dll", EntryPoint = "GetWindowRect")]
     [return: MarshalAs(UnmanagedType.Bool)]
     public static partial bool GetWindowRect(nint hwnd, out RECT lpRect);
+
+    [LibraryImport("user32.dll", EntryPoint = "GetClientRect")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static partial bool GetClientRect(nint hwnd, out RECT lpRect);
+
+    [LibraryImport("user32.dll", EntryPoint = "ClientToScreen")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static partial bool ClientToScreen(nint hwnd, ref POINT lpPoint);
 
     [LibraryImport("user32.dll", EntryPoint = "MoveWindow")]
     [return: MarshalAs(UnmanagedType.Bool)]

@@ -33,7 +33,7 @@ public static class LiveTestHost
 
         var hwnd = OverlayNative.FindWindowForProcess(process.ProcessId);
         var gameState = new GameStateView(reader, theGameSlots);
-        var input = new InputRouter();
+        var input = new InputRouter { GameHwnd = hwnd };
         using var recorder = new LiveTestRecorder(
             options, test, process, ingameDataAddress, ingameStateAddress);
         using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(options.TimeoutSeconds));

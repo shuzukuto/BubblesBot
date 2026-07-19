@@ -72,7 +72,7 @@ public sealed class SimulacrumMode : IBotMode
     private bool _inventoryEstimateKnown;
     private bool _inventoryEstimateExact;
     private string _inventoryOccupancySource = "unknown";
-    private readonly Dictionary<uint, PendingRewardLoot> _pendingRewardLoot = new();
+    private readonly Dictionary<long, PendingRewardLoot> _pendingRewardLoot = new();
     private Vector2i? _rewardDropAnchor;
     private TimeSpan _rewardSettleUntil = TimeSpan.MinValue;
     private string _combatDestination = "none";
@@ -347,10 +347,15 @@ public sealed class SimulacrumMode : IBotMode
         {
             if (wave >= MaxWaves)
             {
+                // Reattach to a completed run: instead of a full physical sweep, just check the drop area
+                _reattachRewardSweepRequired = false;
+                _rewardDropAnchor = _monolith?.GridPosition ?? ctx.Live?.GridPosition;
+                _rewardSettleUntil = BotMonotonicClock.Now + TimeSpan.FromSeconds(ctx.Settings.SimulacrumLootQuietSeconds);
+                _controller.ResumeBetweenWaves(BotMonotonicClock.Now);
                 Diagnostics.EventLog.Emit(
                     "simulacrum", "simulacrum.reattach-completed",
                     Diagnostics.EventSeverity.Info,
-                    $"reattached to fully completed Simulacrum (wave {wave}); bypassing sweep",
+                    $"reattached to fully completed Simulacrum (wave {wave}); recovering remaining rewards at anchor",
                     new Dictionary<string, object?> { ["wave"] = wave });
             }
             else
@@ -374,7 +379,7 @@ public sealed class SimulacrumMode : IBotMode
         // Cached StateMachine values cannot end a wave. While the monolith is outside the
         // current entity traversal, continue safe combat/sweeping; once dry, return to its
         // retained anchor and obtain a fresh observation.
-        if (_monolith.IsStale)
+        if (_monolith?.IsStale == true)
         {
             // Once an inactive edge was positively observed, the wave is over. The monolith
             // may scroll out of memory while we stand at the reward pile; do not abandon loot
@@ -817,20 +822,20 @@ public sealed class SimulacrumMode : IBotMode
     {
         if (_controller.Phase != SimulacrumPhase.Looting) return;
         var filter = LootClosestVisible.SharedValueFilter;
-        var observed = new HashSet<uint>();
+        var observed = new HashSet<long>();
         long anchorX = 0, anchorY = 0;
         var anchorCount = 0;
         foreach (var label in ctx.Snapshot.GroundLabels)
         {
-            if (!label.IsItem || label.EntityId == 0 || label.EntityGridPosition is not { } rawPosition)
+            if (!label.IsItem || label.EntityGridPosition is not { } rawPosition)
                 continue;
-            observed.Add(label.EntityId);
+            observed.Add(label.LabelAddress);
             if (!label.IsLabelVisible) continue; // the user's loot filter is the primary allowlist
             if (filter is not null && !filter.Evaluate(label, ctx.Settings.Loot).ShouldTake) continue;
             var position = IsSaneRewardPosition(ctx, rawPosition)
                 ? rawPosition
                 : _rewardDropAnchor ?? ctx.Live?.GridPosition ?? rawPosition;
-            _pendingRewardLoot[label.EntityId] = new PendingRewardLoot(position, label.ItemName);
+            _pendingRewardLoot[label.LabelAddress] = new PendingRewardLoot(position, label.ItemName);
             if (label.IsRectOnScreen || label.DistanceToPlayer <= ctx.Settings.LootRangeGrid)
                 _lootRecoverySweep = false;
             anchorX += position.X;
@@ -847,12 +852,17 @@ public sealed class SimulacrumMode : IBotMode
         // A confirmed pickup removes the world label. Only forget it when we are back at the
         // remembered position; absence while far away merely means it left the network bubble.
         if (ctx.Live is not { } live) return;
-        List<uint>? removed = null;
+        List<long>? removed = null;
         foreach (var (id, item) in _pendingRewardLoot)
         {
             if (observed.Contains(id)) continue;
-            if (Distance(live.GridPosition, item.Position) > 18f) continue;
-            (removed ??= new List<uint>()).Add(id);
+            // The item is missing from the network bubble. If we are physically close enough
+            // to confidently assert it's gone (picked up or destroyed), remove it.
+            if (Distance(live.GridPosition, item.Position) < 100f)
+            {
+                removed ??= new List<long>();
+                removed.Add(id);
+            }
         }
         if (removed is not null)
             foreach (var id in removed) _pendingRewardLoot.Remove(id);
@@ -1171,7 +1181,7 @@ public sealed class SimulacrumMode : IBotMode
         var items = _pendingRewardLoot
             .OrderBy(x => x.Key)
             .Select(x => new SimulacrumRecoveryItem(
-                x.Key, x.Value.Name, x.Value.Position.X, x.Value.Position.Y))
+                unchecked((uint)x.Key), x.Value.Name, x.Value.Position.X, x.Value.Position.Y))
             .ToArray();
         var signature = $"{areaHash}:{wave}:{PointSignature(_monolithAnchor)}:"
             + $"{PointSignature(_stashAnchor)}:{PointSignature(_portalAnchor)}:"

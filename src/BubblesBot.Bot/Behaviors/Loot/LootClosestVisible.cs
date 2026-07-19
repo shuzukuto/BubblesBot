@@ -139,8 +139,7 @@ public sealed class LootClosestVisible : IBehavior
             // are deliberately excluded — they'd zone the player out unexpectedly.
             var outerPath = label.Path;
             var isItem  = label.IsItem;
-            var isChest = !isItem && outerPath.StartsWith("Metadata/Chests/", StringComparison.Ordinal)
-                          && !outerPath.StartsWith("Metadata/Chests/Blight", StringComparison.OrdinalIgnoreCase);
+            var isChest = !isItem && outerPath.StartsWith("Metadata/Chests/", StringComparison.Ordinal);
             var isDoor  = !isItem && !isChest && outerPath.Contains("/Door", StringComparison.OrdinalIgnoreCase);
             if (!isItem && !isChest && !isDoor) continue;
             targets++;

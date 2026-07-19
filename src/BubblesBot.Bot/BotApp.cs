@@ -543,11 +543,15 @@ public sealed class BotApp : IDisposable, Web.IControlSurface
         var periodTicks = Stopwatch.Frequency / TargetHz;
         var nextTick = Stopwatch.GetTimestamp();
         _gameHwnd = OverlayNative.FindWindowForProcess(_process.ProcessId);
+        _input.GameHwnd = _gameHwnd;
 
         while (!_shutdown)
         {
             if (_gameHwnd == 0)
+            {
                 _gameHwnd = OverlayNative.FindWindowForProcess(_process.ProcessId);
+                _input.GameHwnd = _gameHwnd;
+            }
             if (_gameHwnd != 0)
                 _overlayWindow.TrackGameWindow(_gameHwnd);
 

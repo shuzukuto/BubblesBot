@@ -61,13 +61,10 @@ internal static class CharacterSelectRecoveryHost
             || !immediate.BigBrawlerBoiNameMatches || !immediate.BigBrawlerBoiSelected)
             return Fail("character-selection identity changed immediately before Play");
 
-        var input = new InputRouter();
-        var point = window.ToScreen(
-            CharacterSelectVisualOracle.PlayClientX,
-            CharacterSelectVisualOracle.PlayClientY);
+        var input = new InputRouter { GameHwnd = hwnd };
         var ticket = input.Click(
-            point.X,
-            point.Y,
+            CharacterSelectVisualOracle.PlayClientX,
+            CharacterSelectVisualOracle.PlayClientY,
             ClickIntent.InteractUi,
             "pre-bootstrap Play on visually verified BigBrawlerBoi",
             () =>

@@ -1,4 +1,5 @@
 using BubblesBot.Bot.Diagnostics;
+using BubblesBot.Bot.Overlay.Native;
 using BubblesBot.Bot.Systems;
 
 namespace BubblesBot.Bot.Input;
@@ -30,6 +31,13 @@ namespace BubblesBot.Bot.Input;
 /// </summary>
 public sealed class InputRouter : IInputRouter
 {
+    public nint GameHwnd { get; set; }
+
+    private void MoveCursorClient(int clientX, int clientY)
+    {
+        SendInputNative.MoveCursor(clientX, clientY);
+    }
+
     /// <summary>
     /// Hard floor between consecutive click dispatches. PoE needs a moment to register the
     /// click before a follow-up can land cleanly. Held keys ignore this floor — they're
@@ -161,7 +169,7 @@ public sealed class InputRouter : IInputRouter
         if (!TryConsumeActionBudget()) return Suppress(actionId, intent, description, "action-budget");
         Accepted(actionId, intent, description);
 
-        SendInputNative.MoveCursor(absX, absY);
+        MoveCursorClient(absX, absY);
         return QueuePointerAction(actionId, intent, $"{intent}: {description}",
             PointerActionKind.LeftClick, null, expectResolved, timeoutMs);
     }
@@ -173,7 +181,7 @@ public sealed class InputRouter : IInputRouter
         if (!IsIdle) return Suppress(actionId, intent, description, "gate-busy");
         if (!TryConsumeActionBudget()) return Suppress(actionId, intent, description, "action-budget");
         Accepted(actionId, intent, description);
-        SendInputNative.MoveCursor(absX, absY);
+        MoveCursorClient(absX, absY);
         // Right-click via the keyboard-tap path on VK_RBUTTON (0x02) — SendInputNative routes
         // that through MOUSEINPUT events, same as TapKey of any mouse VK.
         return QueuePointerAction(actionId, intent, $"{intent}: {description} (RMB)",
@@ -190,7 +198,7 @@ public sealed class InputRouter : IInputRouter
         if (!TryConsumeActionBudget()) return Suppress(actionId, intent, description, "action-budget");
         Accepted(actionId, intent, description);
 
-        SendInputNative.MoveCursor(absX, absY);
+        MoveCursorClient(absX, absY);
         // Hold each modifier down → click → release modifiers in reverse order. Done as a
         // synchronous sequence so the click happens with all modifiers latched.
         var modDesc = string.Join(",", modifiers.Select(m => $"0x{m:X}"));
@@ -289,7 +297,7 @@ public sealed class InputRouter : IInputRouter
         var now = BotMonotonicClock.Now;
 
         if (_pendingPointer is null && _hasHover)
-            SendInputNative.MoveCursor(_hoverX, _hoverY);
+            MoveCursorClient(_hoverX, _hoverY);
         _hasHover = false;
         _hoverPriority = CursorPriority.Walk;
 
@@ -306,9 +314,11 @@ public sealed class InputRouter : IInputRouter
                 case PointerActionKind.ModifierLeftClick:
                     var modifiers = pointer.Modifiers ?? [];
                     foreach (var vk in modifiers) SendInputNative.KeyDown(vk);
+                    System.Threading.Thread.Sleep(30);
                     try { SendInputNative.LeftClick(); }
                     finally
                     {
+                        System.Threading.Thread.Sleep(30);
                         for (var i = modifiers.Length - 1; i >= 0; i--)
                             SendInputNative.KeyUp(modifiers[i]);
                     }

@@ -139,13 +139,6 @@ public sealed class SimulacrumController
             Transition(SimulacrumPhase.Fighting, frame.Now);
             return Decision(SimulacrumCommand.Fight, $"resume active wave {frame.Wave}");
         }
-        if (frame.Wave >= _maxWaves && frame.WaveActive.Truth == ObservationTruth.False)
-        {
-            Phase = SimulacrumPhase.Terminal;
-            TerminalReason = $"attached to completed Simulacrum (wave {frame.Wave})";
-            return Decision(SimulacrumCommand.Leave, TerminalReason);
-        }
-
         if (frame.StartReady.Truth == ObservationTruth.Unknown)
             return Decision(SimulacrumCommand.Wait, "start readiness unknown");
         if (frame.StartReady.Truth != ObservationTruth.True)

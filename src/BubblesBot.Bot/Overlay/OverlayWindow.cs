@@ -215,17 +215,20 @@ public sealed class OverlayWindow : IDisposable
     public bool TrackGameWindow(nint gameHwnd)
     {
         if (gameHwnd == 0) return false;
-        if (!OverlayNative.GetWindowRect(gameHwnd, out var rect)) return false;
+        if (!OverlayNative.GetClientRect(gameHwnd, out var rect)) return false;
+
+        var pt = new OverlayNative.POINT { X = 0, Y = 0 };
+        OverlayNative.ClientToScreen(gameHwnd, ref pt);
 
         var w = rect.Right  - rect.Left;
         var h = rect.Bottom - rect.Top;
         if (w <= 0 || h <= 0) return false;
 
-        if (rect.Left != OriginX || rect.Top != OriginY || w != Width || h != Height)
+        if (pt.X != OriginX || pt.Y != OriginY || w != Width || h != Height)
         {
             if (w != Width || h != Height) AllocateBackingBitmap(w, h);
-            OriginX = rect.Left;
-            OriginY = rect.Top;
+            OriginX = pt.X;
+            OriginY = pt.Y;
             // Position is communicated to the OS via UpdateLayeredWindow's pptDst.
         }
 

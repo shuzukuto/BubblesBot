@@ -70,9 +70,9 @@ public sealed class BotSettings
     public int SimulacrumInventoryKeyVk { get; set; } = 0x49;
 
     [Setting("Simulacrum", "Loot quiet window (s)",
-        "After a physical arena sweep finds no actionable item, wait this long near the monolith before starting the next wave or exiting.")]
-    [SettingRange(2, 15, 1)]
-    public float SimulacrumLootQuietSeconds { get; set; } = 5f;
+        "After a physical arena sweep finds no actionable item, wait this long near the monolith before starting the next wave or exiting. Increase this if items drop slowly at high waves.")]
+    [SettingRange(2, 25, 1)]
+    public float SimulacrumLootQuietSeconds { get; set; } = 12f;
 
     [Setting("Simulacrum", "Target runs",
         "Complete this many full Simulacrums before disarming. 0 continues until the bot-wide run-time limit or supplies are exhausted.")]
