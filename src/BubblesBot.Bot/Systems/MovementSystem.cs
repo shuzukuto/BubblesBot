@@ -79,13 +79,15 @@ public sealed class MovementSystem
         var (absX, absY) = w.ToScreen(sx, sy);
 
         // Ownership prevents an inactive behavior's Reset() from releasing a hold that a
-        // different behavior acquired earlier in the same tree tick. This was observed live
-        // in Blight: Selector.ResetAfter reset the later chest/exit FollowPaths after the
-        // active sweep FollowPath had started walking, producing a key-down/key-up pair every
-        // ~40 ms until the server kicked for too many actions.
+        // different behavior acquired earlier in the same tree tick.
         _holdOwner = owner;
-        EnsureHold(ctx.Input);
+        
         ctx.Input.HoverAt(absX, absY, CursorPriority.Walk);
+        // Force cursor to move immediately before EnsureHold so that if a KeyDown is dispatched,
+        // it lands on the game world and not on the UI where the cursor might have been resting.
+        BubblesBot.Bot.Input.SendInputNative.MoveCursor(absX, absY);
+        
+        EnsureHold(ctx.Input);
         _lastWalkAt = BotMonotonicClock.Now;
         return true;
     }

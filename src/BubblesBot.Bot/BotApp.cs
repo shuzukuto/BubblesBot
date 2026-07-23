@@ -60,9 +60,10 @@ public sealed class BotApp : IDisposable, Web.IControlSurface
     private readonly BlightMode     _blight;
     private readonly SimulacrumRunMode _simulacrum;
     private readonly MapRunMode _mapRun;
-    // One shared combat authority (movement + tactical brain) for general-combat modes.
     private readonly Systems.CombatCoordinator _combat;
     private readonly Systems.ReviveSystem _revive = new();
+    private readonly Systems.GemLevelingSystem _gemLeveling = new();
+    private readonly Systems.StuckMonitorSystem _stuckMonitor;
     private readonly ProfileStore _profiles;
     private readonly Strategies.StrategyStore _strategies;
     private readonly WebServer _web;
@@ -138,6 +139,7 @@ public sealed class BotApp : IDisposable, Web.IControlSurface
         _strategies.SeedIfEmpty(Strategies.LegacySettingsMigration.BuildSeeds(legacyFarm));
         _blight       = new BlightMode(_settings, () => _currentSnapshot, () => _liveCache, () => _entities);
         _combat       = new Systems.CombatCoordinator(new Systems.MovementSystem(_settings));
+        _stuckMonitor = new Systems.StuckMonitorSystem(_settings);
         _simulacrum   = new SimulacrumRunMode(_settings, _combat, () => _currentSnapshot, () => _liveCache, () => _entities);
         _mapRun       = new MapRunMode(_settings, _combat, _strategies, () => _currentSnapshot, () => _liveCache, () => _entities,
             _runReports, () => _lootLedger.Snapshot());
@@ -213,6 +215,13 @@ public sealed class BotApp : IDisposable, Web.IControlSurface
     {
         _settings.Mutate(s => s.BotActive = false);
         return Web.ControlResult.Success("disarmed");
+    }
+
+    public IReadOnlyList<string> GetPlayerBuffs()
+    {
+        var player = _currentSnapshot?.Player;
+        if (player is null) return Array.Empty<string>();
+        return player.Buffs.Buffs.Select(b => b.Name).ToArray();
     }
 
     public Web.ControlResult SwitchMode(int mode, bool force)
@@ -649,7 +658,15 @@ public sealed class BotApp : IDisposable, Web.IControlSurface
         {
             Diagnostics.EventLog.Log("gate", $"game state: {_gameStateKind} -> {kind}");
             if (kind is not (GameStateKind.InGame or GameStateKind.GateDisabled))
+            {
                 _input.CancelAll();
+            }
+            else if (kind == GameStateKind.InGame)
+            {
+                // We just entered InGame. The game may have dropped MouseUp/KeyUp edges during the loading screen.
+                // Flush the physical input state to prevent the game from thinking keys are stuck down.
+                _input.FlushStuckGameInput();
+            }
             _gameStateKind = kind;
         }
         var worldLive = kind is GameStateKind.InGame or GameStateKind.GateDisabled;
@@ -770,7 +787,10 @@ public sealed class BotApp : IDisposable, Web.IControlSurface
                     // dead / clicking — don't dispatch a mode into a corpse
                 }
                 else
-                switch (_settings.Current.ActiveMode)
+                {
+                    _stuckMonitor.Tick(_currentSnapshot, _input);
+                    _gemLeveling.Tick(_currentSnapshot, _input, _settings.Current.AutoLevelGems);
+                    switch (_settings.Current.ActiveMode)
                 {
                     case 4: _mapRun.Tick(_currentSnapshot, _input); break;
                     case 5: _blight.Tick(_currentSnapshot, _input); break;
@@ -779,6 +799,7 @@ public sealed class BotApp : IDisposable, Web.IControlSurface
                     default:
                         _overlay.Tick(_currentSnapshot, _input);
                         break;
+                }
                 }
             }
 
@@ -806,12 +827,17 @@ public sealed class BotApp : IDisposable, Web.IControlSurface
         // ── Render every tick ──────────────────────────────────────────────
         // HUD lines come from whichever map-clearing mode is active; they persist between
         // world ticks (rebuilt at 30 Hz, rendered at 144 Hz).
-        IReadOnlyList<string>? hud = _settings.Current.ActiveMode switch
+        IReadOnlyList<string>? modeHud = _settings.Current.ActiveMode switch
         {
             4 => _mapRun.HudLines,
             6 => _simulacrum.HudLines,
             _ => null,
         };
+        var profit = _lootLedger.Snapshot();
+        var hudLines = new List<string>((modeHud?.Count ?? 0) + 1);
+        if (modeHud is not null) hudLines.AddRange(modeHud);
+        hudLines.Add($"Profit: {profit.TotalChaos:F1}c | {profit.ChaosPerHour:F1}c/h | {profit.Pickups} pickups");
+        var hud = hudLines;
 
         // Campaign guidance: read the worker's latest snapshot lock-free, then re-walk each target's
         // flow field from the LIVE player cell this frame (cheap, O(path)) so routes track smoothly.

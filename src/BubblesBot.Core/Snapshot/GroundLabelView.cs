@@ -452,7 +452,21 @@ public sealed class GroundLabelView
             .Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
         // Item labels can append stack/price information. The first non-empty line is the
         // item name in both the default and custom-filter layouts.
-        return lines.Length > 0 ? lines[0] : text.Trim();
+        var name = lines.Length > 0 ? lines[0] : text.Trim();
+
+        // Strip PoE's stack prefix "4x " from ground labels to avoid duplicating
+        // the stack count in our own logging and UI.
+        var spaceIdx = name.IndexOf(' ');
+        if (spaceIdx > 0 && (name[spaceIdx - 1] == 'x' || name[spaceIdx - 1] == '×'))
+        {
+            var prefix = name.AsSpan(0, spaceIdx - 1);
+            if (int.TryParse(prefix, out _))
+            {
+                name = name[(spaceIdx + 1)..].TrimStart();
+            }
+        }
+
+        return name;
     }
 
     /// <summary>

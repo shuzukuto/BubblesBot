@@ -103,7 +103,8 @@ public static class Threat
         float maxRangeGrid,
         float densityRadiusGrid,
         Func<EntityCache.Entry, bool>? skip = null,
-        Func<EntityCache.Entry, double>? strategyWeight = null)
+        Func<EntityCache.Entry, double>? strategyWeight = null,
+        uint? stickyTargetId = null)
     {
         if (ctx.Entities is null || ctx.Live is null) return null;
         var player = ctx.Live.Value.GridPosition;
@@ -120,7 +121,8 @@ public static class Threat
         var candidates = entities
             .Select(entity => new CombatDestinationScoring.Candidate(
                 entity.GridPosition, RarityRank(entity),
-                strategyWeight?.Invoke(entity) ?? 0d))
+                strategyWeight?.Invoke(entity) ?? 0d,
+                stickyTargetId.HasValue && entity.Id == stickyTargetId.Value))
             .ToArray();
         var choice = CombatDestinationScoring.Choose(candidates, player, densityRadiusGrid);
         if (choice is null) return null;

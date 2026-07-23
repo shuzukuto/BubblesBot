@@ -29,4 +29,7 @@ public interface IControlSurface
 
     /// <summary>Environment/preflight snapshot for the wizard and dashboard.</summary>
     object Meta();
+
+    /// <summary>Get current player buffs for UI helpers.</summary>
+    IReadOnlyList<string> GetPlayerBuffs();
 }

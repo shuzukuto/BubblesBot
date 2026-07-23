@@ -179,7 +179,7 @@ public sealed class SimulacrumControllerTests
         bool deposit = false)
         => new(now, wave, deaths,
             start ?? Unknown("start"), active ?? Unknown("active"),
-            complete ?? Unknown("complete"), rewards ?? Unknown("rewards"), deposit);
+            complete ?? Unknown("complete"), rewards ?? Unknown("rewards"), deposit, false);
 
     private static BooleanObservation True(string source)
         => BooleanObservation.Known(true, source, 1, ObservationConfidence.Validated);

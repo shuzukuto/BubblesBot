@@ -67,6 +67,8 @@ public sealed class MapDeviceSystem
     private int      _clickAttempts;
     private int      _nodeClickAttempts;
     private PayloadSource _payloadSource;
+    private bool     _simulacrumRightClicked;
+    private TimeSpan _simulacrumRightClickAt;
 
     /// <summary>
     /// Portal entity IDs that existed when <see cref="Start"/> was called. The hideout
@@ -121,6 +123,8 @@ public sealed class MapDeviceSystem
         _clickAttempts  = 0;
         _nodeClickAttempts = 0;
         _activateReadySince = TimeSpan.MinValue;
+        _simulacrumRightClicked = false;
+        _simulacrumRightClickAt = TimeSpan.Zero;
         _portalInRangeSince = TimeSpan.MinValue;
         _payloadSource = payloadSource;
 
@@ -323,7 +327,15 @@ public sealed class MapDeviceSystem
         }
 
         if (_clickAttempts >= MaxClickAttempts)
-            return Fail($"failed to stage map after {MaxClickAttempts} ctrl+clicks");
+        {
+            ctx.Input.HoverAt(ctx.Snapshot.Window.Width / 2, ctx.Snapshot.Window.Height / 2);
+            ctx.Input.MouseScroll(-600); // scroll out 5 ticks (120 per tick)
+            _clickAttempts = 0;
+            Status = "scrolled out to retry map staging";
+            _lastActionAt = BotMonotonicClock.Now;
+            BubblesBot.Bot.Diagnostics.EventLog.Log("MapDevice", "max ctrl+clicks reached, scrolled out to retry");
+            return Result.InProgress;
+        }
 
         var slotIndex = ctx.Settings.BlightStorageSlotIndex;
         var stored = atlas.StoredItems();
@@ -630,6 +642,27 @@ public sealed class MapDeviceSystem
         var rect = target.Rect;
         var (sx, sy) = ctx.Snapshot.Window.ToScreen(
             (int)rect.CenterX, (int)rect.CenterY);
+
+        if (!_simulacrumRightClicked)
+        {
+            var rClick = ctx.Input.RightClick(
+                sx, sy, ClickIntent.InteractUi, "right-click Simulacrum", timeoutMs: 1500);
+            if (rClick.Accepted)
+            {
+                _simulacrumRightClicked = true;
+                _simulacrumRightClickAt = BotMonotonicClock.Now;
+                _lastActionAt = BotMonotonicClock.Now;
+                Status = "right-clicked Simulacrum, waiting 1s";
+            }
+            return Result.InProgress;
+        }
+
+        if ((BotMonotonicClock.Now - _simulacrumRightClickAt).TotalSeconds < 1.0)
+        {
+            Status = "waiting 1s after right-click Simulacrum";
+            return Result.InProgress;
+        }
+
         var ticket = ctx.Input.ModifierClick(
             sx, sy, [VK_LCONTROL], ClickIntent.InteractUi, "insert Simulacrum",
             expectResolved: () => _getSnapshot()?.AtlasPanel is { } liveAtlas
@@ -640,6 +673,7 @@ public sealed class MapDeviceSystem
         {
             _clickAttempts++;
             _lastActionAt = BotMonotonicClock.Now;
+            _simulacrumRightClicked = false;
             Status = $"ctrl-clicked Simulacrum ({_clickAttempts}/{MaxClickAttempts})";
             BubblesBot.Bot.Diagnostics.EventLog.Emit(
                 "simulacrum", "simulacrum.device-insert-requested",

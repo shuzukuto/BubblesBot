@@ -32,6 +32,12 @@ public sealed class DamageEvidenceTracker
         return _blacklist.TryGetValue(id, out var until) && now < until;
     }
 
+    public void ManualBlacklist(uint targetId, TimeSpan now, double holdMs)
+    {
+        Tick(now);
+        _blacklist[targetId] = now.Add(TimeSpan.FromMilliseconds(holdMs));
+    }
+
     public void ClearEngagement()
     {
         _engagedId = 0;

@@ -38,6 +38,8 @@ public sealed class CombatSystem
         if (aimPt is null) return BehaviorStatus.Failure;
 
         ctx.Input.HoverAt(aimPt.Value.X, aimPt.Value.Y, CursorPriority.CombatAim);
+        BubblesBot.Bot.Input.SendInputNative.MoveCursor(aimPt.Value.X, aimPt.Value.Y);
+        
         var ticket = ctx.Input.TapKey(slot.Vk, ClickIntent.UseSkill, description);
         if (!ticket.Accepted) return BehaviorStatus.Failure;
         ActionState?.OnFired(slot);
@@ -56,6 +58,8 @@ public sealed class CombatSystem
         if (aimPt is null) { StopChannel(slot); return BehaviorStatus.Failure; }
 
         ctx.Input.HoverAt(aimPt.Value.X, aimPt.Value.Y, CursorPriority.CombatAim);
+        BubblesBot.Bot.Input.SendInputNative.MoveCursor(aimPt.Value.X, aimPt.Value.Y);
+        
         if (_channels.TryGetValue(slot, out var existing) && existing.IsActive)
             existing.Refresh();
         else

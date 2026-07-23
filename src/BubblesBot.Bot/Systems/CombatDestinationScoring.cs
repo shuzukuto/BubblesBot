@@ -12,7 +12,8 @@ public static class CombatDestinationScoring
     public readonly record struct Candidate(
         Vector2i Position,
         int RarityRank,
-        double StrategyWeight = 0d);
+        double StrategyWeight = 0d,
+        bool IsSticky = false);
     public readonly record struct Choice(
         int Index, double Score, double DensityWeight, int NearbyCount, float Distance);
 
@@ -40,7 +41,7 @@ public static class CombatDestinationScoring
             }
 
             var distance = MathF.Sqrt(DistanceSquared(player, candidate.Position));
-            var score = densityWeight - distance * 0.06d;
+            var score = densityWeight - distance * 0.06d + (candidate.IsSticky ? 5.0d : 0d);
             var choice = new Choice(i, score, densityWeight, nearbyCount, distance);
             if (best is null
                 || choice.Score > best.Value.Score

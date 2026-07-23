@@ -91,6 +91,10 @@ public sealed class BotSettings
         "Regular, Premium, or Quad stash tab used for between-wave loot. Specialized affinity tabs are rejected.")]
     public string SimulacrumDumpTabName { get; set; } = "Dump";
 
+    [Setting("Simulacrum", "Enable boss focusing",
+        "When true, prioritizes Simulacrum bosses in this exact order: Kosis > Omniphobia > Spawner Totems. Ignore proximity until priority targets are dead.")]
+    public bool SimulacrumBossFocusing { get; set; } = false;
+
     // Map-farming configuration moved to farming-strategy documents (Strategies tab). The old
     // MapFarm*/StackedDeck*/Take*/Ritual*/AltarPolicy/ExplorationDonePercent properties were
     // removed here; a one-time seed migration (LegacyFarmSettings + LegacySettingsMigration)
@@ -146,6 +150,9 @@ public sealed class BotSettings
 
     [Setting("Blight chests", "Oils", "Open oil/mushrune reward chests.")]
     public bool BlightChestOils { get; set; } = true;
+
+    [Setting("General", "Auto-level gems", "Automatically clicks the '+' button to level up gems when they are ready.")]
+    public bool AutoLevelGems { get; set; } = false;
 
     [Setting("Blight chests", "Divination cards", "Open divination-card and stacked-deck reward chests.")]
     public bool BlightChestDivinationCards { get; set; } = true;
@@ -350,6 +357,11 @@ public sealed class BotSettings
     [SettingRange(10, 100, 5)]
     public float InteractionRangeGrid { get; set; } = 25f;
 
+    [Setting("Movement", "Stuck timeout (s)",
+        "If the player stands in the same spot for this many seconds while the bot is active, forcefully spam movement to try to unstick. 0 disables this anti-stuck feature.")]
+    [SettingRange(0, 60, 5)]
+    public float StuckTimeoutSeconds { get; set; } = 15f;
+
     [Setting("Movement", "Allow gap crossing",
         "When on, A* may route through pf=0/targeting>0 cells (gaps) and the bot will fire a tagged Dash skill to cross them. Off = walk-around behavior only.")]
     public bool AllowGapCrossing { get; set; } = true;
@@ -365,7 +377,7 @@ public sealed class BotSettings
         "Draw in-campaign guidance (route to the next area exit, in-area objectives, and points of interest) while in the manual overlay mode. Read-only — never drives movement.")]
     public bool ShowCampaignGuidance { get; set; } = true;
 
-    [Setting("Overlay", "Show entity HP bars",
+    [Setting("General", "Show entity HP bars",
         "Draw a compact HP bar above every hostile monster in range (all rarities). Uniques also keep their full nameplate.")]
     public bool ShowEntityHpBars { get; set; } = true;
 

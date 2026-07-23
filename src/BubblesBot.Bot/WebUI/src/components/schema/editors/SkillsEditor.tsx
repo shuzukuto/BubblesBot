@@ -33,27 +33,46 @@ export function SkillsEditor({ value, onChange }: Props) {
   const updateSlot = (index: number, patch: Partial<SkillSlot>) =>
     setSlots(slots.map((slot, i) => (i === index ? { ...slot, ...patch } : slot)));
 
-  const importDetected = (entry: LiveSkill) => {
+  const liveSkills = useStatusStore((s) => s.status?.liveSkills);
+
+  const buildSlotFromEntry = (entry: LiveSkill) => {
     const def = SLOT_DEFAULT_KEY[entry.barSlot] ?? { vk: 0, label: "" };
     const name = entry.name?.length
       ? entry.name
       : def.label
         ? `${def.label} skill`
         : `Skill ${entry.barSlot}`;
-    setSlots([
-      ...slots,
-      {
-        name,
-        vk: def.vk,
-        role: 0,
-        canCrossGaps: false,
-        minCastIntervalMs: 100,
-        maxRangeGrid: 30,
-        chargeCount: Math.max(1, entry.maxUses || 1),
-        chargeRechargeMs: 3000,
-        gemId: entry.gemId,
-      },
-    ]);
+    
+    // Guess role: Left click (LMB, 0x01) or named "Walk" is Walk role (1). Others default to Attack (3) or None (0)
+    let role = 0;
+    if (def.vk === 0x01 || name.toLowerCase() === "walk") role = 1;
+
+    return {
+      name,
+      vk: def.vk,
+      role,
+      canCrossGaps: false,
+      minCastIntervalMs: 100,
+      maxRangeGrid: 30,
+      chargeCount: Math.max(1, entry.maxUses || 1),
+      chargeRechargeMs: 3000,
+      gemId: entry.gemId,
+    };
+  };
+
+  const importDetected = (entry: LiveSkill) => {
+    setSlots([...slots, buildSlotFromEntry(entry)]);
+  };
+
+  const autoScan = () => {
+    if (!liveSkills || liveSkills.length === 0) {
+      alert("No skills detected. Make sure the bot is running and attached to the game.");
+      return;
+    }
+    // We only take the first 8 slots (the visible bar) for auto scan to avoid clutter
+    const visible = liveSkills.filter((e) => e.barSlot < 8);
+    const newSlots = visible.map(buildSlotFromEntry);
+    setSlots(newSlots);
   };
 
   return (
@@ -76,6 +95,9 @@ export function SkillsEditor({ value, onChange }: Props) {
         />
       )}
       <div className="skill-add-row">
+        <button type="button" className="skill-add" title="Automatically detect and import your currently equipped skills" onClick={autoScan}>
+          Auto Scan
+        </button>
         <button type="button" className="skill-add" onClick={() => setShowDetected(true)}>
           + add skill
         </button>
@@ -112,11 +134,14 @@ function SkillRow({ slot, onPatch, onRemove }: {
         onChange={(e) => onPatch({ name: e.target.value })}
       />
       <KeycodeButton value={slot.vk} onChange={(vk) => onPatch({ vk })} />
-      <select value={slot.role} onChange={(e) => onPatch({ role: parseInt(e.target.value, 10) })}>
-        {ROLE_NAMES.map((role, i) => (
-          <option key={i} value={i}>{role}</option>
-        ))}
-      </select>
+      <label className="skill-num">
+        Role:{" "}
+        <select value={slot.role} onChange={(e) => onPatch({ role: parseInt(e.target.value, 10) })}>
+          {ROLE_NAMES.map((role, i) => (
+            <option key={i} value={i}>{role}</option>
+          ))}
+        </select>
+      </label>
       {Number(slot.role) === ROLE_DASH && (
         <label className="skill-flag">
           <input
@@ -130,12 +155,8 @@ function SkillRow({ slot, onPatch, onRemove }: {
       <NumField label="interval ms" value={slot.minCastIntervalMs} onChange={(v) => onPatch({ minCastIntervalMs: v })} />
       <NumField label="range" value={slot.maxRangeGrid} onChange={(v) => onPatch({ maxRangeGrid: v })} />
       <NumField label="gemId" value={Number(slot.gemId ?? 0)} onChange={(v) => onPatch({ gemId: v })} />
-      {Number(slot.role) === ROLE_DASH && (
-        <>
-          <NumField label="charges" value={slot.chargeCount} onChange={(v) => onPatch({ chargeCount: v })} />
-          <NumField label="recharge ms" value={slot.chargeRechargeMs} onChange={(v) => onPatch({ chargeRechargeMs: v })} />
-        </>
-      )}
+      <NumField label="charges" value={slot.chargeCount} onChange={(v) => onPatch({ chargeCount: v })} />
+      <NumField label="recharge ms" value={slot.chargeRechargeMs} onChange={(v) => onPatch({ chargeRechargeMs: v })} />
       <button type="button" className="skill-remove" title="Remove" onClick={onRemove}>×</button>
     </div>
   );

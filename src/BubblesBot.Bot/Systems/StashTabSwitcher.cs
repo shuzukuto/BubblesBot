@@ -11,8 +11,8 @@ public sealed class StashTabSwitcher
 
     private const int VkLeft = 0x25;
     private const int VkRight = 0x27;
-    private const int MaxMoves = 64;
-    private static readonly TimeSpan Timeout = TimeSpan.FromSeconds(20);
+    private const int MaxMoves = 128;
+    private static readonly TimeSpan Timeout = TimeSpan.FromSeconds(60);
 
     private readonly Func<GameSnapshot?> _getSnapshot;
     private string _targetName = string.Empty;

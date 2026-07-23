@@ -48,9 +48,14 @@ public sealed class StashTabsView
     public Tab? Find(string name, bool requireGeneralPurpose)
     {
         var matches = Tabs.Where(tab => tab.Name.Equals(
-            name, StringComparison.OrdinalIgnoreCase));
+            name, StringComparison.OrdinalIgnoreCase)).ToList();
+            
         if (requireGeneralPurpose)
-            matches = matches.Where(tab => tab.Type is 0 or 1 or 7);
+        {
+            var general = matches.Where(tab => tab.Type is 0 or 1 or 7).ToList();
+            if (general.Count > 0)
+                return general.OrderBy(tab => tab.DisplayIndex).FirstOrDefault();
+        }
         return matches.OrderBy(tab => tab.DisplayIndex).FirstOrDefault();
     }
 }

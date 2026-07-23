@@ -36,6 +36,7 @@ public sealed class SimulacrumRunMode : IBotMode
     private readonly StashTabSwitcher _supplyTabSwitcher;
     private readonly MapDeviceSystem _device;
     private readonly SimulacrumMode _arena;
+    private readonly ExplorationSystem _hideoutExploration = new();
     private readonly AreaTransitionTracker _entryTransition = new(TimeSpan.FromSeconds(12));
     private readonly AreaTransitionTracker _exitTransition = new(TimeSpan.FromSeconds(12));
 
@@ -60,6 +61,7 @@ public sealed class SimulacrumRunMode : IBotMode
     // the hideout hash and hung the run — 2026-07-16 wave-11 incident).
     private bool _reentryPortalEntered;
     private TimeSpan _reentryAwaitStartedAt = TimeSpan.MinValue;
+    private int _reentryFailures;
     private string _recoveryReason = string.Empty;
     private uint _recoveryOriginAreaHash;
     private int _runDeaths;
@@ -70,10 +72,11 @@ public sealed class SimulacrumRunMode : IBotMode
     private bool _deviceStorageChecked;
     private string _stopReason = string.Empty;
     private string _runId = Guid.NewGuid().ToString("N");
+    private string _lastDecision = "init";
+    private readonly TimeSpan _sessionStartedAt = Systems.BotMonotonicClock.Now;
 
     public string Name => "Simulacrum farming";
     public IBehavior Root => _arena.Root;
-    private string _lastDecision = "init";
     public string LastDecision 
     {
         get => _lastDecision;
@@ -86,7 +89,22 @@ public sealed class SimulacrumRunMode : IBotMode
             }
         }
     }
-    public IReadOnlyList<string> HudLines => new[] { LastDecision };
+    public IReadOnlyList<string> HudLines
+    {
+        get
+        {
+            var target = _settings.Current.SimulacrumTargetRuns;
+            var running = Systems.BotMonotonicClock.Now - _sessionStartedAt;
+            return new[]
+            {
+                $"Simulacrum: {_step} | Runs: {_runsCompleted}/{(target > 0 ? target.ToString() : "∞")}",
+                $"Attempts: {_runsStarted} | Abandoned: 0 | Running: {running:hh\\:mm\\:ss}",
+                $"Wave: {_arena.ActiveWave}/15 | {_arena.Phase}",
+                $"Deaths: {_runDeaths} run",
+                LastDecision,
+            };
+        }
+    }
     public string RunId => _runId;
     public object Telemetry => new
     {
@@ -139,7 +157,7 @@ public sealed class SimulacrumRunMode : IBotMode
             getSnapshot,
             entity => entity.Kind == EntityListReader.EntityKind.TownPortal
                    || entity.Kind == EntityListReader.EntityKind.Portal,
-            _ => _recoveryLeg == RecoveryLeg.ExitArena ? _arena.PortalAnchor : null);
+            ctx => _recoveryLeg == RecoveryLeg.ExitArena ? _arena.PortalAnchor : _hideoutExploration.PickFrontier(ctx));
     }
 
     public void Tick(GameSnapshot snapshot, IInputRouter input)
@@ -196,7 +214,10 @@ public sealed class SimulacrumRunMode : IBotMode
                 ["runDeaths"] = _runDeaths,
                 ["maxDeaths"] = _settings.Current.SimulacrumMaxDeaths,
             });
-        return _runDeaths <= _settings.Current.SimulacrumMaxDeaths;
+        
+        // Always return true to keep the automation armed. If deaths exceed the budget,
+        // TickArena or TickRecovery will discard the run and start a fresh map.
+        return true;
     }
 
     public static bool ShouldResumeExistingPortal(
@@ -660,9 +681,10 @@ public sealed class SimulacrumRunMode : IBotMode
 
             if (role == AreaRole.SafeHub && _deathRecoveryPending)
             {
-                if (_runDeaths > _settings.Current.SimulacrumMaxDeaths)
+                if (_runDeaths >= 6 || _runDeaths > _settings.Current.SimulacrumMaxDeaths)
                 {
-                    Stop($"Simulacrum death budget exceeded ({_runDeaths}/{_settings.Current.SimulacrumMaxDeaths})");
+                    CompleteDiscardToSupply(ctx.Snapshot.AreaHash);
+                    LastDecision = $"Arena/Discard: Simulacrum death budget exceeded ({_runDeaths}/{_settings.Current.SimulacrumMaxDeaths}), discarding run";
                     return;
                 }
                 _step = Step.Recover;
@@ -723,20 +745,34 @@ public sealed class SimulacrumRunMode : IBotMode
 
     private void TickRecovery(BehaviorContext ctx)
     {
-        if (_runDeaths > _settings.Current.SimulacrumMaxDeaths)
+        if (_runDeaths >= 6 || _runDeaths > _settings.Current.SimulacrumMaxDeaths)
         {
-            Stop($"Simulacrum death budget exceeded ({_runDeaths}/{_settings.Current.SimulacrumMaxDeaths})");
+            var role = WorldAreaClassifier.Classify(ctx);
+            if (role == AreaRole.SafeHub && ctx.Snapshot.AreaHash != 0)
+            {
+                CompleteDiscardToSupply(ctx.Snapshot.AreaHash);
+                LastDecision = $"Recovery/Discard: Simulacrum death budget exceeded ({_runDeaths}/{_settings.Current.SimulacrumMaxDeaths}), discarding run";
+            }
+            else
+            {
+                LastDecision = $"Recovery/AwaitSafeHub: Simulacrum death budget exceeded ({_runDeaths}/{_settings.Current.SimulacrumMaxDeaths}); waiting for hideout transition to discard";
+            }
             return;
         }
         if (_recoveryStartedAt != TimeSpan.MinValue
-            && AreaTransitionTracker.MonotonicNow() - _recoveryStartedAt > TimeSpan.FromSeconds(30))
+            && AreaTransitionTracker.MonotonicNow() - _recoveryStartedAt > TimeSpan.FromSeconds(90))
         {
             Stop($"Simulacrum recovery timed out during {_recoveryLeg}: {_recoveryReason}");
             return;
         }
 
         // The portal-entered latch only has meaning while returning to the arena.
-        if (_recoveryLeg != RecoveryLeg.ReturnToArena) _reentryPortalEntered = false;
+        if (_recoveryLeg != RecoveryLeg.ReturnToArena)
+        {
+            _reentryPortalEntered = false;
+            _reentryFailures = 0;
+            _hideoutExploration.Reset();
+        }
 
         if (_recoveryLeg == RecoveryLeg.AwaitSafeHub)
         {
@@ -791,6 +827,9 @@ public sealed class SimulacrumRunMode : IBotMode
         // the wave-11 hang bug; only reattach once we're positively in a changed, non-hub area.
         if (!_reentryPortalEntered)
         {
+            if (ctx.Live is { } live)
+                _hideoutExploration.TrackVisit(ctx.Snapshot, live.GridPosition);
+
             if (_returnThroughPortal.Tick(ctx) != BehaviorStatus.Success)
             {
                 LastDecision = $"Recovery/Return: locating and entering existing portal after {_recoveryReason}";
@@ -805,16 +844,30 @@ public sealed class SimulacrumRunMode : IBotMode
 
         var arenaRole = WorldAreaClassifier.Classify(ctx);
         if (ctx.Snapshot.AreaHash == 0
-            || ctx.Snapshot.AreaHash != _arenaAreaHash
+            || (_arenaAreaHash != 0 && ctx.Snapshot.AreaHash != _arenaAreaHash)
             || arenaRole == AreaRole.SafeHub)
         {
             if (_reentryAwaitStartedAt != TimeSpan.MinValue
                 && AreaTransitionTracker.MonotonicNow() - _reentryAwaitStartedAt > TimeSpan.FromSeconds(5))
             {
+                _reentryFailures++;
+                if (_reentryFailures >= 3)
+                {
+                    _reentryFailures = 0;
+                    if (_recoveryReason == "boot resume through existing portal")
+                    {
+                        CompleteDiscardToSupply(ctx.Snapshot.AreaHash);
+                        LastDecision = "Recovery/Return: portal transition failed 3 times; assuming stale portal, discarding existing run";
+                        return;
+                    }
+                    Stop($"Simulacrum recovery failed: portal transition failed 3 times ({_recoveryReason})");
+                    return;
+                }
+
                 // The portal click was a false positive, or the instance join failed, leaving us in Hideout.
                 // Reset the portal state to force the behavior to try clicking another portal.
                 _reentryPortalEntered = false;
-                LastDecision = $"Recovery/Return: portal transition failed after 5s; retrying";
+                LastDecision = $"Recovery/Return: portal transition failed after 5s; retrying ({_reentryFailures}/3)";
                 return;
             }
 
@@ -828,6 +881,8 @@ public sealed class SimulacrumRunMode : IBotMode
             preserveSweepProgress: reason.StartsWith(
                 "checkpoint death", StringComparison.OrdinalIgnoreCase));
         _reentryPortalEntered = false;
+        _reentryFailures = 0;
+        _hideoutExploration.Reset();
         LastDecision = $"Recovery/Arena: re-entered existing instance after {reason}";
         Diagnostics.EventLog.Emit(
             "simulacrum", "simulacrum.portal-recovery-completed",

@@ -22,13 +22,13 @@ public sealed class BuffsView
     public IReadOnlyList<BuffView> Buffs => _buffs;
     public bool Has(string name)
     {
-        foreach (var b in _buffs) if (string.Equals(b.Name, name, StringComparison.OrdinalIgnoreCase)) return true;
+        foreach (var b in _buffs) if (b.Name.Contains(name, StringComparison.OrdinalIgnoreCase)) return true;
         return false;
     }
 
     public BuffView? Find(string name)
     {
-        foreach (var b in _buffs) if (string.Equals(b.Name, name, StringComparison.OrdinalIgnoreCase)) return b;
+        foreach (var b in _buffs) if (b.Name.Contains(name, StringComparison.OrdinalIgnoreCase)) return b;
         return null;
     }
 

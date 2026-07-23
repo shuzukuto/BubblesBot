@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState, useMemo } from "react";
 import { ApiError, fetchSchema, fetchSettings, patchSettings, type FieldError, type PatchOp, type SettingsEnvelope } from "../api/client";
 import type { Schema, Settings } from "../api/types";
 import { fieldPath, pathGet, pathSet, sameValue } from "../lib/paths";
@@ -74,14 +74,49 @@ export default function SettingsPage() {
     }
   };
 
+  const categories = useMemo(() => {
+    if (!schema) return [];
+    return Array.from(new Set(schema.fields.map(f => f.category)));
+  }, [schema]);
+  const [activeCategory, setActiveCategory] = useState<string | null>(null);
+
+  // Set default active category once loaded
+  useEffect(() => {
+    if (categories.length > 0 && !activeCategory) {
+      setActiveCategory(categories[0]);
+    }
+  }, [categories, activeCategory]);
+
   if (error && !schema) return <section className="card"><h2>Settings</h2><div className="v bad">{error}</div></section>;
   if (!schema || !draft || !original) return <section className="card"><h2>Settings</h2><div className="tree-empty">loading…</div></section>;
 
   return (
     <>
-      <section className="card">
+      <section className="card settings-card">
         <h2>Settings</h2>
-        <SchemaForm fields={schema.fields} values={draft} saved={original} onChange={onChange} />
+        <div className="settings-layout">
+          <div className="settings-sidebar">
+            {categories.map(c => (
+              <button
+                key={c}
+                type="button"
+                className={`settings-tab ${c === activeCategory ? 'active' : ''}`}
+                onClick={() => setActiveCategory(c)}
+              >
+                {c.toUpperCase()}
+              </button>
+            ))}
+          </div>
+          <div className="settings-content">
+            <SchemaForm 
+              fields={schema.fields} 
+              values={draft} 
+              saved={original} 
+              onChange={onChange} 
+              categories={activeCategory ? [activeCategory] : undefined}
+            />
+          </div>
+        </div>
       </section>
       {(dirty || fieldErrors.length > 0) && (
         <div className="dirty-bar">

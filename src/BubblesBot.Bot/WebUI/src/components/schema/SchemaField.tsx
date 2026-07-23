@@ -28,7 +28,7 @@ export function SchemaFieldControl({ field, value, onChange }: Props) {
     case "float":
       return <NumberControl field={field} value={value as number | undefined} onChange={onChange} />;
     case "string":
-      return <TextControl value={String(value ?? "")} onChange={onChange} />;
+      return <TextControl field={field} value={String(value ?? "")} onChange={onChange} />;
     case "stringlist":
       return (
         <StringListEditor

@@ -8,6 +8,11 @@ namespace BubblesBot.Bot.Input;
 /// </summary>
 internal static class SendInputNative
 {
+    public static bool IsKeyDownAsync(int vk)
+    {
+        return (GetAsyncKeyState(vk) & 0x8000) != 0;
+    }
+
     public static void MoveCursor(int absX, int absY)
     {
         SetCursorPos(absX, absY);
@@ -43,17 +48,24 @@ internal static class SendInputNative
 
     public static void KeyTap(int vk)
     {
-        Span<INPUT> inputs = stackalloc INPUT[2];
-        if (IsMouseButton(vk))
-        {
-            inputs[0] = MouseButton(vk, down: true);
-            inputs[1] = MouseButton(vk, down: false);
-        }
-        else
-        {
-            inputs[0] = KeyInput((ushort)vk, keyUp: false);
-            inputs[1] = KeyInput((ushort)vk, keyUp: true);
-        }
+        Span<INPUT> down = stackalloc INPUT[1];
+        down[0] = IsMouseButton(vk) ? MouseButton(vk, down: true) : KeyInput((ushort)vk, keyUp: false);
+        Send(down);
+        
+        System.Threading.Thread.Sleep(25);
+        
+        Span<INPUT> up = stackalloc INPUT[1];
+        up[0] = IsMouseButton(vk) ? MouseButton(vk, down: false) : KeyInput((ushort)vk, keyUp: true);
+        Send(up);
+    }
+
+    public static void MouseScroll(int delta)
+    {
+        var i = new INPUT { type = INPUT_MOUSE };
+        i.U.mi.dwFlags = MOUSEEVENTF_WHEEL;
+        i.U.mi.mouseData = unchecked((uint)delta);
+        Span<INPUT> inputs = stackalloc INPUT[1];
+        inputs[0] = i;
         Send(inputs);
     }
 
@@ -104,9 +116,11 @@ internal static class SendInputNative
 
     private static INPUT KeyInput(ushort vk, bool keyUp)
     {
+        var scanCode = (ushort)MapVirtualKeyW(vk, MAPVK_VK_TO_VSC);
         var i = new INPUT { type = INPUT_KEYBOARD };
         i.U.ki.wVk = vk;
-        i.U.ki.dwFlags = keyUp ? KEYEVENTF_KEYUP : 0u;
+        i.U.ki.wScan = scanCode;
+        i.U.ki.dwFlags = (scanCode > 0 ? KEYEVENTF_SCANCODE : 0u) | (keyUp ? KEYEVENTF_KEYUP : 0u);
         return i;
     }
 
@@ -128,6 +142,7 @@ internal static class SendInputNative
     private const uint MOUSEEVENTF_RIGHTUP    = 0x0010;
     private const uint MOUSEEVENTF_MIDDLEDOWN = 0x0020;
     private const uint MOUSEEVENTF_MIDDLEUP   = 0x0040;
+    private const uint MOUSEEVENTF_WHEEL      = 0x0800;
     private const uint MOUSEEVENTF_XDOWN      = 0x0080;
     private const uint MOUSEEVENTF_XUP        = 0x0100;
     private const uint XBUTTON1               = 0x0001;
@@ -181,4 +196,12 @@ internal static class SendInputNative
 
     [DllImport("user32.dll")]
     private static extern unsafe uint SendInput(uint nInputs, INPUT* pInputs, int cbSize);
+
+    [DllImport("user32.dll")]
+    private static extern uint MapVirtualKeyW(uint uCode, uint uMapType);
+
+    [DllImport("user32.dll")]
+    private static extern short GetAsyncKeyState(int vKey);
+
+    private const uint MAPVK_VK_TO_VSC = 0;
 }

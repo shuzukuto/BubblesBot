@@ -74,6 +74,8 @@ public sealed class SkillBook
             // null = skill has no cooldown entry (e.g. basic attack) → fall through to sim.
         }
 
+        if (slot.ChargeRechargeMs <= 0) return true;
+
         Refill(slot, s, now);
         return s.Charges >= 1;
     }
@@ -102,6 +104,11 @@ public sealed class SkillBook
     {
         var s = StateOf(slot);
         var now = BotMonotonicClock.Now;
+        if (slot.ChargeRechargeMs <= 0)
+        {
+            s.LastCastAt = now;
+            return;
+        }
         Refill(slot, s, now);
         if (s.Charges > 0) s.Charges--;
         s.LastCastAt = now;

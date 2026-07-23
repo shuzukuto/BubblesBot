@@ -6,6 +6,7 @@ using BubblesBot.Bot.Input;
 using BubblesBot.Bot.Settings;
 using BubblesBot.Bot.Systems;
 using BubblesBot.Core.Game;
+using BubblesBot.Core.Knowledge;
 using BubblesBot.Core.Snapshot;
 
 namespace BubblesBot.Bot.Modes;
@@ -76,6 +77,7 @@ public sealed class SimulacrumMode : IBotMode
     private Vector2i? _rewardDropAnchor;
     private TimeSpan _rewardSettleUntil = TimeSpan.MinValue;
     private string _combatDestination = "none";
+    private uint? _lastCombatTargetId;
     private uint _recoveryAreaHash;
     private bool _recoveryLoaded;
     private string _lastRecoverySignature = string.Empty;
@@ -351,7 +353,7 @@ public sealed class SimulacrumMode : IBotMode
                 // Reattach to a completed run: instead of a full physical sweep, just check the drop area
                 _reattachRewardSweepRequired = false;
                 _rewardDropAnchor = _monolith?.GridPosition ?? ctx.Live?.GridPosition;
-                _rewardSettleUntil = BotMonotonicClock.Now + TimeSpan.FromSeconds(ctx.Settings.SimulacrumLootQuietSeconds);
+                _rewardSettleUntil = TimeSpan.MinValue;
                 _controller.ResumeBetweenWaves(BotMonotonicClock.Now);
                 Diagnostics.EventLog.Emit(
                     "simulacrum", "simulacrum.reattach-completed",
@@ -361,10 +363,9 @@ public sealed class SimulacrumMode : IBotMode
             }
             else
             {
-                // We may have crashed before a newly-visible reward was checkpointed. A restart
-                // between waves therefore owes one physical arena sweep even when the durable
-                // pending set is empty.
-                _reattachRewardSweepRequired = true;
+                // The user prefers not to do a full physical sweep of the arena when restarting 
+                // between waves. Just collect visible loot and start the next wave.
+                _reattachRewardSweepRequired = false;
                 _exploration.Reset();
                 _controller.ResumeBetweenWaves(BotMonotonicClock.Now);
                 _canStartWaveAt = BotMonotonicClock.Now +
@@ -372,7 +373,7 @@ public sealed class SimulacrumMode : IBotMode
                 Diagnostics.EventLog.Emit(
                     "simulacrum", "simulacrum.reattach-between-waves",
                     Diagnostics.EventSeverity.Info,
-                    $"reattached after wave {wave}; recover rewards before next start",
+                    $"reattached after wave {wave}; recover visible rewards before next start",
                     new Dictionary<string, object?> { ["wave"] = wave });
             }
         }
@@ -655,7 +656,12 @@ public sealed class SimulacrumMode : IBotMode
         // in, mark it, and let trash swarm it (Penance Mark phantasms + Cast-on-X + RF). Only when
         // no rare+ is present do we fall back to the densest pack / nearest hostile. This is the
         // "go to the dense/rare monsters first" behaviour the CwS build needs on the boss wave.
-        var target = _coord.SelectPriorityRare(ctx, ctx.Settings.ProximityEngageRadiusGrid)
+        EntityCache.Entry? target = null;
+        if (ctx.Settings.SimulacrumBossFocusing)
+        {
+            target = SelectPrioritySimulacrumBoss(ctx, ctx.Settings.ProximityEngageRadiusGrid);
+        }
+        target ??= _coord.SelectPriorityRare(ctx, ctx.Settings.ProximityEngageRadiusGrid)
                      ?? SelectCombatTarget(ctx, ctx.Settings.ProximityEngageRadiusGrid);
         // No target and the arena is swept dry: escalate (sweep again → portal refresh). This
         // repeats until the state changes or the controller's wave timeout fires.
@@ -736,11 +742,23 @@ public sealed class SimulacrumMode : IBotMode
             if (target is not null && Distance(ctx.Live.Value.GridPosition, target.GridPosition)
                 <= ctx.Settings.ProximityHoldRadiusGrid)
             {
-                _movement.Halt(new BehaviorContextLite(ctx.Snapshot, ctx.Input, ctx.Live));
-                _coord.MarkTick(ctx);   // curse rare+ while standing in the pack (spawns phantasms)
-                return;
+                var canHit = ctx.Snapshot.Nav is { IsAvailable: true, PathReader: not null } nav 
+                    && BubblesBot.Core.Pathfinding.PathSmoother.HasLineOfSight(
+                        nav.PathReader,
+                        ctx.Live.Value.GridPosition.X, ctx.Live.Value.GridPosition.Y,
+                        target.GridPosition.X, target.GridPosition.Y,
+                        minValue: 1);
+                if (canHit)
+                {
+                    _movement.Halt(new BehaviorContextLite(ctx.Snapshot, ctx.Input, ctx.Live));
+                    _coord.MarkTick(ctx);   // curse rare+ while standing in the pack (spawns phantasms)
+                    return;
+                }
             }
-            _fightPath.Tick(ctx);
+            if (_fightPath.Tick(ctx) == BehaviorStatus.Failure && target is not null)
+            {
+                _coord.ManualBlacklist(target.Id, BotMonotonicClock.Now, 10000);
+            }
             _coord.MarkTick(ctx);       // keep marking while approaching the pack
             return;
         }
@@ -750,14 +768,29 @@ public sealed class SimulacrumMode : IBotMode
             && Distance(ctx.Live.Value.GridPosition, target.GridPosition) <= attack.MaxRangeGrid
             && _skills.IsReady(attack))
         {
-            _movement.Release();
-            if (_combat.Cast(attack, Aim.AtEntity(target.Id), ctx, "simulacrum attack")
-                == BehaviorStatus.Success)
-                _skills.MarkCast(attack);
-            _coord.MarkTick(ctx);
-            return;
+            var canHit = ctx.Snapshot.Nav is { IsAvailable: true, PathReader: not null } nav 
+                && BubblesBot.Core.Pathfinding.PathSmoother.HasLineOfSight(
+                    nav.PathReader,
+                    ctx.Live.Value.GridPosition.X, ctx.Live.Value.GridPosition.Y,
+                    target.GridPosition.X, target.GridPosition.Y,
+                    minValue: 1);
+            if (canHit)
+            {
+                _movement.Release();
+                if (_combat.Cast(attack, Aim.AtEntity(target.Id), ctx, "simulacrum attack")
+                    == BehaviorStatus.Success)
+                    _skills.MarkCast(attack);
+                _coord.MarkTick(ctx);
+                return;
+            }
         }
-        _fightPath.Tick(ctx);
+        if (_fightPath.Tick(ctx) == BehaviorStatus.Failure && target is not null)
+        {
+            _coord.ManualBlacklist(target.Id, BotMonotonicClock.Now, 10000);
+            Diagnostics.EventLog.Emit("simulacrum", "simulacrum.target-unreachable",
+                Diagnostics.EventSeverity.Warning,
+                $"target {target.Id} is unreachable (no path), blacklisted for 10s");
+        }
         _coord.MarkTick(ctx);
     }
 
@@ -1078,6 +1111,11 @@ public sealed class SimulacrumMode : IBotMode
             return _monolithAnchor;
         // Mirror TickFight's priority: route to the boss/rare (targetable or not) first, then the
         // densest pack / nearest, then the exploration frontier.
+        if (ctx.Settings.SimulacrumBossFocusing)
+        {
+            var boss = SelectPrioritySimulacrumBoss(ctx, ctx.Settings.ProximityEngageRadiusGrid);
+            if (boss is not null) return boss.GridPosition;
+        }
         var rare = _coord.SelectPriorityRare(ctx, ctx.Settings.ProximityEngageRadiusGrid);
         if (rare is not null) return rare.GridPosition;
         var target = SelectCombatTarget(ctx, ctx.Settings.ProximityEngageRadiusGrid);
@@ -1087,28 +1125,73 @@ public sealed class SimulacrumMode : IBotMode
 
     private EntityCache.Entry? SelectCombatTarget(BehaviorContext ctx, float radius)
     {
+        EntityCache.Entry? selection;
         if (ctx.Settings.MapClearStance != 1
             || ctx.Settings.ProximityDestinationPolicy == 0)
         {
-            var nearest = NearestTarget(ctx, radius);
-            _combatDestination = nearest is null
+            selection = NearestTarget(ctx, radius, id => _coord.IsBlacklisted(id), _lastCombatTargetId);
+            _combatDestination = selection is null
                 ? "none"
-                : $"nearest id={nearest.Id}";
-            return nearest;
+                : $"nearest id={selection.Id}";
         }
+        else
+        {
+            var pack = Threat.BestPack(
+                ctx,
+                radius,
+                ctx.Settings.ProximityDensityRadiusGrid,
+                entity => EnemyIgnoreList.IsIgnored(entity.Name) || _coord.IsBlacklisted(entity.Id),
+                stickyTargetId: _lastCombatTargetId);
+            selection = pack?.Target;
+            _combatDestination = pack is null
+                ? "none"
+                : $"pack id={pack.Value.Target.Id} rarity={Threat.RarityRank(pack.Value.Target)} "
+                  + $"nearby={pack.Value.NearbyCount} "
+                  + $"weight={pack.Value.DensityWeight:F0} score={pack.Value.Score:F1} "
+                  + $"distance={pack.Value.Distance:F1}";
+        }
+        _lastCombatTargetId = selection?.Id;
+        return selection;
+    }
 
-        var selection = Threat.BestPack(
-            ctx,
-            radius,
-            ctx.Settings.ProximityDensityRadiusGrid,
-            entity => EnemyIgnoreList.IsIgnored(entity.Name));
-        _combatDestination = selection is null
-            ? "none"
-            : $"pack id={selection.Value.Target.Id} rarity={Threat.RarityRank(selection.Value.Target)} "
-              + $"nearby={selection.Value.NearbyCount} "
-              + $"weight={selection.Value.DensityWeight:F0} score={selection.Value.Score:F1} "
-              + $"distance={selection.Value.Distance:F1}";
-        return selection?.Target;
+    private EntityCache.Entry? SelectPrioritySimulacrumBoss(BehaviorContext ctx, float radius)
+    {
+        if (ctx.Entities is null || ctx.Live is null) return null;
+        var p = ctx.Live.Value.GridPosition;
+        var r2 = radius * radius;
+        EntityCache.Entry? best = null;
+        var bestPriority = -1;
+        var bestD2 = float.PositiveInfinity;
+        
+        foreach (var e in ctx.Entities.Entries.Values)
+        {
+            if (e.IsStale || e.Kind != EntityListReader.EntityKind.Monster || e.Disposition != EntityDisposition.Combatant) continue;
+            if (e.AlliedReaction.Truth == ObservationTruth.True) continue;
+            if (EnemyIgnoreList.IsIgnored(e.Name) || _coord.IsBlacklisted(e.Id)) continue;
+            if (e.LifeReadable.Truth == ObservationTruth.True && (e.HpCurrent <= 0 || e.HpMax <= 0)) continue;
+
+            float dx = e.GridPosition.X - p.X, dy = e.GridPosition.Y - p.Y;
+            var d2 = dx * dx + dy * dy;
+            if (d2 > r2) continue;
+
+            int priority = -1;
+            if (e.Name.Contains("Kosis", StringComparison.OrdinalIgnoreCase) || e.Path.Contains("AfflictionDemonBoss", StringComparison.OrdinalIgnoreCase) && !e.Path.Contains("AfflictionDemonBossPhysical", StringComparison.OrdinalIgnoreCase))
+                priority = 3;
+            else if (e.Name.Contains("Omniphobia", StringComparison.OrdinalIgnoreCase) || e.Path.Contains("AfflictionDemonBossPhysical", StringComparison.OrdinalIgnoreCase) || e.Path.Contains("AfflictionBoss", StringComparison.OrdinalIgnoreCase))
+                priority = 2;
+            else if (e.Name.Contains("Totem", StringComparison.OrdinalIgnoreCase) || e.Path.Contains("Totem", StringComparison.OrdinalIgnoreCase))
+                priority = 1;
+
+            if (priority < 0) continue;
+
+            if (priority > bestPriority || (priority == bestPriority && d2 < bestD2))
+            {
+                bestPriority = priority;
+                bestD2 = d2;
+                best = e;
+            }
+        }
+        return best;
     }
 
     private Vector2i? FindLootSweepGoal(BehaviorContext ctx)
@@ -1274,7 +1357,8 @@ public sealed class SimulacrumMode : IBotMode
             ? (int)Math.Clamp(entity.SimulacrumWave.Value, 0, MaxWaves)
             : 0;
 
-    private static EntityCache.Entry? NearestTarget(BehaviorContext ctx, float radius)
+    private static EntityCache.Entry? NearestTarget(
+        BehaviorContext ctx, float radius, Func<uint, bool>? skip = null, uint? stickyTargetId = null)
     {
         if (ctx.Entities is null || ctx.Live is null) return null;
         var player = ctx.Live.Value.GridPosition;
@@ -1282,10 +1366,13 @@ public sealed class SimulacrumMode : IBotMode
         var bestD2 = radius * radius;
         foreach (var entity in ctx.Entities.Entries.Values)
         {
-            if (!TargetEligibility.IsEligible(entity) || EnemyIgnoreList.IsIgnored(entity.Name)) continue;
+            if (!TargetEligibility.IsEligible(entity) || EnemyIgnoreList.IsIgnored(entity.Name) || skip?.Invoke(entity.Id) == true) continue;
             var dx = (float)(entity.GridPosition.X - player.X);
             var dy = (float)(entity.GridPosition.Y - player.Y);
-            var d2 = dx * dx + dy * dy;
+            var d = MathF.Sqrt(dx * dx + dy * dy);
+            if (stickyTargetId.HasValue && entity.Id == stickyTargetId.Value)
+                d = MathF.Max(0, d - 20f);
+            var d2 = d * d;
             if (d2 < bestD2) { bestD2 = d2; best = entity; }
         }
         return best;

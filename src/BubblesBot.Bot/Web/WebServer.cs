@@ -162,6 +162,7 @@ public sealed class WebServer : IDisposable
             case ("PUT", "/api/settings"):        return PutSettings(req);
             case ("PATCH", "/api/settings"):      return PatchSettings(req);
             case ("GET", "/api/settings/schema"): return WebResponse.Json(BuildSchema());
+            case ("GET", "/api/game/buffs"):      return WebResponse.Json(_control.GetPlayerBuffs());
             case ("GET", "/api/status"):          return WebResponse.Json(_getStatus());
             case ("GET", "/api/meta"):            return WebResponse.Json(_control.Meta());
             case ("POST", "/api/control/arm"):    return ControlArm(req);

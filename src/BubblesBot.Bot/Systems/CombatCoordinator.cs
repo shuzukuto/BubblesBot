@@ -31,7 +31,7 @@ public sealed class CombatCoordinator
     private const int    RetreatStepGrid    = 24;
     private const float  DefaultAttackRange = 55f;
     private const double BlacklistHoldMs    = 15000;
-    private const int    RequiredBuffPulseMs = 80;
+    private const int    RequiredBuffPulseMs = 150;
     private const double ProximityDamageEvidenceMs = 4000;
     private const int    DouseAfterLowHpSeconds = 5;
     private const int    MaxDouseAttempts = 3;
@@ -374,6 +374,9 @@ public sealed class CombatCoordinator
 
     public bool IsBlacklisted(uint id)
         => _damageEvidence.IsBlacklisted(id, BotMonotonicClock.Now);
+
+    public void ManualBlacklist(uint id, TimeSpan now, double holdMs)
+        => _damageEvidence.ManualBlacklist(id, now, holdMs);
 
     private void UpdateEngagement(BehaviorContext ctx)
     {

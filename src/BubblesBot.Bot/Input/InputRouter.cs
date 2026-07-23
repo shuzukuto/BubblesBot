@@ -112,6 +112,11 @@ public sealed class InputRouter : IInputRouter
         // skills that listen for the down/up edge.
         if (_held.TryGetValue(vk, out var existing) && existing.IsActive)
         {
+            if (!SendInputNative.IsKeyDownAsync(vk))
+            {
+                Diagnostics.EventLog.Log("input", $"hold resync vk=0x{vk:X2} (OS dropped key)");
+                SendInputNative.KeyDown(vk);
+            }
             existing.Refresh();
             return existing;
         }
@@ -204,6 +209,14 @@ public sealed class InputRouter : IInputRouter
         var modDesc = string.Join(",", modifiers.Select(m => $"0x{m:X}"));
         return QueuePointerAction(actionId, intent, $"{intent}: {description} (mod={modDesc})",
             PointerActionKind.ModifierLeftClick, modifiers.ToArray(), expectResolved, timeoutMs);
+    }
+
+    public void MouseScroll(int delta)
+    {
+        var actionId = Request(ClickIntent.InteractUi, "mouse-scroll", "mouse-scroll", 0, 0);
+        if (!TryConsumeActionBudget()) return;
+        Accepted(actionId, ClickIntent.InteractUi, "mouse-scroll");
+        SendInputNative.MouseScroll(delta);
     }
 
     public InputTicket TapKey(int vk, ClickIntent intent, string description)
@@ -375,6 +388,19 @@ public sealed class InputRouter : IInputRouter
 
     public void OnAreaChanged() => CancelAll();
     public void OnForegroundLost() => CancelAll();
+
+    public void FlushStuckGameInput()
+    {
+        // Force the OS to emit UP events for mouse buttons and common keys, which the game 
+        // will process when it regains control after a loading screen. This fixes a rare bug
+        // where a MouseDown sent right before a loading screen transition causes the game to
+        // drop the MouseUp, leaving the game in a state where it thinks Left Click is held.
+        SendInputNative.KeyUp(0x01); // Left Click
+        SendInputNative.KeyUp(0x02); // Right Click
+        SendInputNative.KeyUp(0x10); // Shift
+        SendInputNative.KeyUp(0x11); // Ctrl
+        SendInputNative.KeyUp(0x12); // Alt
+    }
 
     private void ReleaseAllHeld()
     {

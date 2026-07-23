@@ -57,6 +57,11 @@ internal sealed class GuardedLiveTestInput : IInputRouter
     public InputTicket TapKey(int vk, ClickIntent intent, string description)
         => Allowed() ? _inner.TapKey(vk, intent, description) : new InputTicket(null);
 
+    public void MouseScroll(int delta)
+    {
+        if (Allowed()) _inner.MouseScroll(delta);
+    }
+
     public InputTicket VerifiedTapKey(int vk, ClickIntent intent, string description,
         Func<bool> expectResolved, int timeoutMs = 1500)
         => Allowed()
@@ -78,6 +83,7 @@ internal sealed class GuardedLiveTestInput : IInputRouter
     public void CancelAll() => _inner.CancelAll();
     public void OnAreaChanged() => _inner.OnAreaChanged();
     public void OnForegroundLost() => _inner.OnForegroundLost();
+    public void FlushStuckGameInput() => _inner.FlushStuckGameInput();
 
     private bool Allowed()
     {

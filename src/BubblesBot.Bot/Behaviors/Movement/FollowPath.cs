@@ -65,6 +65,8 @@ public sealed class FollowPath : IBehavior
     private const int    MaxBlinkAttempts = 3;   // failed blinks at one spot before walking around
     private const float  BlinkAimGrid = 22f;     // how far across the gap to throw the cursor
 
+    private int _gapFailures;
+
     private AStar? _astar;
     private int _astarW, _astarH;
     private IReadOnlyList<PathCell>? _path;
@@ -327,6 +329,7 @@ public sealed class FollowPath : IBehavior
         if (Distance(player, _blinkFromCell) >= BlinkSuccessMove)
         {
             _blinkPhase = BlinkPhase.Idle;
+            _gapFailures = 0;
             LastDecision = $"{tag} BLINK landed (moved {Distance(player, _blinkFromCell):F0})";
             return BlinkOutcome.Landed;
         }
@@ -347,8 +350,11 @@ public sealed class FollowPath : IBehavior
     /// <summary>A gap blink failed repeatedly — route on foot for a while before retrying gaps.</summary>
     private void BeginWalkAround()
     {
-        _walkAroundUntil = BotMonotonicClock.Now.Add(TimeSpan.FromSeconds(8));
+        _gapFailures++;
+        var durationSeconds = Math.Min(60, 8 * _gapFailures);
+        _walkAroundUntil = BotMonotonicClock.Now.Add(TimeSpan.FromSeconds(durationSeconds));
         _path = null; // force a walk-only recompute next tick
+        _blinkPhase = BlinkPhase.Idle;
     }
 
     /// <summary>

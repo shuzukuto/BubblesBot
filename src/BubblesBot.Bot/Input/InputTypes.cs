@@ -139,6 +139,9 @@ public interface IInputRouter
     InputTicket ModifierClick(int absX, int absY, int[] modifiers, ClickIntent intent, string description,
         Func<bool>? expectResolved = null, int timeoutMs = 1500);
 
+    /// <summary>Simulates a mouse wheel scroll. Positive delta scrolls forward/away from user, negative delta scrolls backward/toward user. Not gated.</summary>
+    void MouseScroll(int delta);
+
     /// <summary>True when no click is in flight and the post-action settle has elapsed.</summary>
     bool IsIdle { get; }
 
@@ -160,4 +163,7 @@ public interface IInputRouter
 
     /// <summary>Foreground-loss side effects: release everything. PoE wouldn't receive the input anyway.</summary>
     void OnForegroundLost();
+
+    /// <summary>Force the OS to emit UP events for mouse buttons and common keys.</summary>
+    void FlushStuckGameInput();
 }
