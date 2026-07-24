@@ -386,3 +386,6 @@ select:focus { border-color: var(--accent); outline: none; }
   min-width: 0;
 }
 .settings-content .section-head { margin-top: 16px; display: none; } /* Hide the category header since we have tabs now */
+.skill-reorder { background: transparent; color: var(--text-dim); border: none; font-size: 10px; cursor: pointer; padding: 0 4px; line-height: 1; }
+.skill-reorder:hover:not(:disabled) { color: var(--text); }
+.skill-reorder:disabled { opacity: 0.2; cursor: default; }

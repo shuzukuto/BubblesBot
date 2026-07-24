@@ -82,6 +82,20 @@ export function SkillsEditor({ value, onChange }: Props) {
           <SkillRow
             key={index}
             slot={slot}
+            isFirst={index === 0}
+            isLast={index === slots.length - 1}
+            onMoveUp={() => {
+              if (index === 0) return;
+              const next = [...slots];
+              [next[index - 1], next[index]] = [next[index], next[index - 1]];
+              setSlots(next);
+            }}
+            onMoveDown={() => {
+              if (index === slots.length - 1) return;
+              const next = [...slots];
+              [next[index], next[index + 1]] = [next[index + 1], next[index]];
+              setSlots(next);
+            }}
             onPatch={(patch) => updateSlot(index, patch)}
             onRemove={() => setSlots(slots.filter((_, i) => i !== index))}
           />
@@ -119,13 +133,21 @@ export function SkillsEditor({ value, onChange }: Props) {
   );
 }
 
-function SkillRow({ slot, onPatch, onRemove }: {
+function SkillRow({ slot, isFirst, isLast, onMoveUp, onMoveDown, onPatch, onRemove }: {
   slot: SkillSlot;
+  isFirst: boolean;
+  isLast: boolean;
+  onMoveUp: () => void;
+  onMoveDown: () => void;
   onPatch: (patch: Partial<SkillSlot>) => void;
   onRemove: () => void;
 }) {
   return (
     <div className="skill-row">
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', marginRight: '4px' }}>
+        <button type="button" className="skill-reorder" disabled={isFirst} onClick={onMoveUp} title="Move Up (Increase Priority)">▲</button>
+        <button type="button" className="skill-reorder" disabled={isLast} onClick={onMoveDown} title="Move Down (Decrease Priority)">▼</button>
+      </div>
       <input
         type="text"
         className="skill-name"
