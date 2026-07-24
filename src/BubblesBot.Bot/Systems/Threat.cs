@@ -46,7 +46,7 @@ public static class Threat
     /// ranged build doesn't fire arrows into a wall). <paramref name="skip"/> excludes ids the
     /// caller has decided are un-hittable right now (un-spawned/dormant mobs whose HP won't drop).
     /// </summary>
-    public static EntityCache.Entry? Biggest(BehaviorContext ctx, float maxRangeGrid, bool requireLos, Func<uint, bool>? skip = null)
+    public static EntityCache.Entry? Biggest(BehaviorContext ctx, float maxRangeGrid, bool requireLos, Func<uint, bool>? skip = null, uint? stickyTargetId = null)
     {
         if (ctx.Entities is null || ctx.Live is null) return null;
         var p = ctx.Live.Value.GridPosition;
@@ -61,6 +61,7 @@ public static class Threat
             if (!Valid(e)) continue;
             if (skip is not null && skip(e.Id)) continue;
             var d2 = Dist2(e.GridPosition, p);
+            if (stickyTargetId.HasValue && e.Id == stickyTargetId.Value) d2 *= 0.64f;
             if (d2 > maxR2) continue;
             if (pf is not null && !PathSmoother.HasLineOfSight(pf, p.X, p.Y, e.GridPosition.X, e.GridPosition.Y, minValue: 1))
                 continue;
@@ -76,18 +77,24 @@ public static class Threat
     /// <summary>Nearest valid hostile within <paramref name="radius"/> — the swarm/danger check.
     /// Optional <paramref name="skip"/> mirrors <see cref="Biggest"/>: ids the caller has
     /// decided are un-engageable right now (damage-gated, essence-frozen).</summary>
-    public static EntityCache.Entry? Nearest(BehaviorContext ctx, float radius, Func<uint, bool>? skip = null)
+    public static EntityCache.Entry? Nearest(BehaviorContext ctx, float radius, Func<uint, bool>? skip = null, uint? stickyTargetId = null, bool requireLos = true)
     {
         if (ctx.Entities is null || ctx.Live is null) return null;
         var p = ctx.Live.Value.GridPosition;
         var r2 = radius * radius;
+        BubblesBot.Core.Pathfinding.ICellReader? pf = requireLos && ctx.Snapshot.Nav is { IsAvailable: true } nav ? nav.PathReader : null;
         EntityCache.Entry? best = null;
         var bestD2 = float.PositiveInfinity;
         foreach (var e in ctx.Entities.Entries.Values)
         {
             if (!Valid(e)) continue;
             if (skip is not null && skip(e.Id)) continue;
+            
+            if (pf is not null && !BubblesBot.Core.Pathfinding.PathSmoother.HasLineOfSight(pf, p.X, p.Y, e.GridPosition.X, e.GridPosition.Y, minValue: 1))
+                continue;
+                
             var d2 = Dist2(e.GridPosition, p);
+            if (stickyTargetId.HasValue && e.Id == stickyTargetId.Value) d2 *= 0.64f;
             if (d2 <= r2 && d2 < bestD2) { bestD2 = d2; best = e; }
         }
         return best;
@@ -104,15 +111,21 @@ public static class Threat
         float densityRadiusGrid,
         Func<EntityCache.Entry, bool>? skip = null,
         Func<EntityCache.Entry, double>? strategyWeight = null,
-        uint? stickyTargetId = null)
+        uint? stickyTargetId = null,
+        bool requireLos = true)
     {
         if (ctx.Entities is null || ctx.Live is null) return null;
         var player = ctx.Live.Value.GridPosition;
         var maxRange2 = maxRangeGrid * maxRangeGrid;
+        BubblesBot.Core.Pathfinding.ICellReader? pf = requireLos && ctx.Snapshot.Nav is { IsAvailable: true } nav ? nav.PathReader : null;
         var entities = new List<EntityCache.Entry>();
         foreach (var entity in ctx.Entities.Entries.Values)
         {
             if (!Valid(entity) || skip?.Invoke(entity) == true) continue;
+            
+            if (pf is not null && !BubblesBot.Core.Pathfinding.PathSmoother.HasLineOfSight(pf, player.X, player.Y, entity.GridPosition.X, entity.GridPosition.Y, minValue: 1))
+                continue;
+                
             if (Dist2(entity.GridPosition, player) <= maxRange2)
                 entities.Add(entity);
         }

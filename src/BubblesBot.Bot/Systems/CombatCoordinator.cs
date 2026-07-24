@@ -44,6 +44,7 @@ public sealed class CombatCoordinator
 
     private readonly DamageEvidenceTracker _damageEvidence = new();
     private readonly FollowPath _engageFollow;
+    private uint? _proximityTargetId;
 
     // per-tick flags (reset in BeginTick)
     private bool _qHeldThisTick;
@@ -284,19 +285,27 @@ public sealed class CombatCoordinator
     /// </summary>
     public EntityCache.Entry? SelectProximityTarget(BehaviorContext ctx)
     {
+        EntityCache.Entry? target;
         if (ctx.Settings.ProximityDestinationPolicy == 0)
-            return Threat.Nearest(ctx, ctx.Settings.ProximityEngageRadiusGrid, IsBlacklisted);
-        var ritual = ctx.Strategy?.Block<Strategies.RitualBlock>();
-        return Threat.BestPack(
-            ctx,
-            ctx.Settings.ProximityEngageRadiusGrid,
-            ctx.Settings.ProximityDensityRadiusGrid,
-            entity => IsBlacklisted(entity.Id),
-            entity => ritual is { Enabled: true, DensityWeight: > 0 }
-                && !string.IsNullOrEmpty(ritual.CorpseMonsterPathFragment)
-                && entity.Path.Contains(ritual.CorpseMonsterPathFragment, StringComparison.OrdinalIgnoreCase)
-                    ? ritual.DensityWeight
-                    : 0d)?.Target;
+            target = Threat.Nearest(ctx, ctx.Settings.ProximityEngageRadiusGrid, IsBlacklisted, _proximityTargetId);
+        else
+        {
+            var ritual = ctx.Strategy?.Block<Strategies.RitualBlock>();
+            target = Threat.BestPack(
+                ctx,
+                ctx.Settings.ProximityEngageRadiusGrid,
+                ctx.Settings.ProximityDensityRadiusGrid,
+                entity => IsBlacklisted(entity.Id),
+                entity => ritual is { Enabled: true, DensityWeight: > 0 }
+                    && !string.IsNullOrEmpty(ritual.CorpseMonsterPathFragment)
+                    && entity.Path.Contains(ritual.CorpseMonsterPathFragment, StringComparison.OrdinalIgnoreCase)
+                        ? ritual.DensityWeight
+                        : 0d,
+                _proximityTargetId)?.Target;
+        }
+        
+        _proximityTargetId = target?.Id;
+        return target;
     }
 
     // ── Penance Mark (curse) ────────────────────────────────────────────────
@@ -335,11 +344,12 @@ public sealed class CombatCoordinator
     /// rare we've blacklisted for taking no damage. Returns null when no rare+ is in range — the
     /// caller then falls back to the densest pack / nearest.
     /// </summary>
-    public EntityCache.Entry? SelectPriorityRare(BehaviorContext ctx, float rangeGrid)
+    public EntityCache.Entry? SelectPriorityRare(BehaviorContext ctx, float rangeGrid, bool requireLos = true)
     {
         if (ctx.Entities is null || ctx.Live is null) return null;
         var p = ctx.Live.Value.GridPosition;
         var r2 = rangeGrid * rangeGrid;
+        BubblesBot.Core.Pathfinding.ICellReader? pf = requireLos && ctx.Snapshot.Nav is { IsAvailable: true } nav ? nav.PathReader : null;
         EntityCache.Entry? best = null;
         var bestRank = -1;
         var bestD2 = float.PositiveInfinity;
@@ -355,6 +365,10 @@ public sealed class CombatCoordinator
             if (IsBlacklisted(e.Id)) continue;               // gave up (took no damage) — let it fall back
             // Skip confirmed-dead reads; unknown life is fine (a shielded boss reads oddly).
             if (e.LifeReadable.Truth == ObservationTruth.True && (e.HpCurrent <= 0 || e.HpMax <= 0)) continue;
+            
+            if (pf is not null && !BubblesBot.Core.Pathfinding.PathSmoother.HasLineOfSight(pf, p.X, p.Y, e.GridPosition.X, e.GridPosition.Y, minValue: 1))
+                continue;
+            
             float dx = e.GridPosition.X - p.X, dy = e.GridPosition.Y - p.Y;
             var d2 = dx * dx + dy * dy;
             if (d2 > r2) continue;
@@ -465,6 +479,7 @@ public sealed class CombatCoordinator
         if (ctx.Snapshot.RitualWindow.IsVisible) return false;
         var buff = ctx.Settings.RequiredMapBuffName.Trim();
         if (buff.Length == 0) return false;
+        if (_requiredBuffAttempts >= 6) return false; // gave up, proceed without it
         if (ctx.Snapshot.Player is { } player && player.Buffs.Has(buff)) return false;
 
         // RF-style buffs burn out at low life, and re-igniting on a drained pool is a death
@@ -486,8 +501,8 @@ public sealed class CombatCoordinator
             Diagnostics.EventLog.Emit(
                 "combat", "combat.required-buff-misconfigured", Diagnostics.EventSeverity.Error,
                 $"required map buff '{buff}' has no configured key");
-            _rfFatalReason = $"required map buff '{buff}' has no configured key";
-            return BehaviorStatus.Running;
+            _requiredBuffAttempts = 6; // bypass forever this map
+            return BehaviorStatus.Failure;
         }
 
         Movement.Halt(new BehaviorContextLite(ctx.Snapshot, ctx.Input, ctx.Live));
@@ -508,8 +523,8 @@ public sealed class CombatCoordinator
                     ["vk"] = vk,
                     ["attempts"] = _requiredBuffAttempts,
                 });
-            _rfFatalReason = $"'{buff}' still absent after {_requiredBuffAttempts} activation attempts";
-            return BehaviorStatus.Running;
+            _requiredBuffAttempts = 6; // bypass forever this map
+            return BehaviorStatus.Failure;
         }
 
         // Toggle skills such as RF are not reliable with a zero-duration SendInput down/up pair.

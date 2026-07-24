@@ -968,7 +968,12 @@ public sealed class SimulacrumMode : IBotMode
             }
         }
         else if (result == StashDepositSystem.Result.Failed)
-            _fatalReason = $"between-wave stash failed: {_stash.Status}";
+        {
+            Diagnostics.EventLog.Emit("simulacrum", "simulacrum.stash-failed", Diagnostics.EventSeverity.Warning,
+                $"between-wave stash failed: {_stash.Status} - skipping deposit for this wave");
+            _depositedWaves.Add(wave);
+            _stash.Cancel();
+        }
     }
 
     private bool InventoryNeedsDeposit(BotSettings settings, int wave)
@@ -1141,7 +1146,8 @@ public sealed class SimulacrumMode : IBotMode
                 radius,
                 ctx.Settings.ProximityDensityRadiusGrid,
                 entity => EnemyIgnoreList.IsIgnored(entity.Name) || _coord.IsBlacklisted(entity.Id),
-                stickyTargetId: _lastCombatTargetId);
+                stickyTargetId: _lastCombatTargetId,
+                requireLos: true);
             selection = pack?.Target;
             _combatDestination = pack is null
                 ? "none"
@@ -1154,11 +1160,12 @@ public sealed class SimulacrumMode : IBotMode
         return selection;
     }
 
-    private EntityCache.Entry? SelectPrioritySimulacrumBoss(BehaviorContext ctx, float radius)
+    private EntityCache.Entry? SelectPrioritySimulacrumBoss(BehaviorContext ctx, float radius, bool requireLos = true)
     {
         if (ctx.Entities is null || ctx.Live is null) return null;
         var p = ctx.Live.Value.GridPosition;
         var r2 = radius * radius;
+        BubblesBot.Core.Pathfinding.ICellReader? pf = requireLos && ctx.Snapshot.Nav is { IsAvailable: true } nav ? nav.PathReader : null;
         EntityCache.Entry? best = null;
         var bestPriority = -1;
         var bestD2 = float.PositiveInfinity;
@@ -1169,6 +1176,9 @@ public sealed class SimulacrumMode : IBotMode
             if (e.AlliedReaction.Truth == ObservationTruth.True) continue;
             if (EnemyIgnoreList.IsIgnored(e.Name) || _coord.IsBlacklisted(e.Id)) continue;
             if (e.LifeReadable.Truth == ObservationTruth.True && (e.HpCurrent <= 0 || e.HpMax <= 0)) continue;
+            
+            if (pf is not null && !BubblesBot.Core.Pathfinding.PathSmoother.HasLineOfSight(pf, p.X, p.Y, e.GridPosition.X, e.GridPosition.Y, minValue: 1))
+                continue;
 
             float dx = e.GridPosition.X - p.X, dy = e.GridPosition.Y - p.Y;
             var d2 = dx * dx + dy * dy;
@@ -1358,15 +1368,19 @@ public sealed class SimulacrumMode : IBotMode
             : 0;
 
     private static EntityCache.Entry? NearestTarget(
-        BehaviorContext ctx, float radius, Func<uint, bool>? skip = null, uint? stickyTargetId = null)
+        BehaviorContext ctx, float radius, Func<uint, bool>? skip = null, uint? stickyTargetId = null, bool requireLos = true)
     {
         if (ctx.Entities is null || ctx.Live is null) return null;
         var player = ctx.Live.Value.GridPosition;
+        BubblesBot.Core.Pathfinding.ICellReader? pf = requireLos && ctx.Snapshot.Nav is { IsAvailable: true } nav ? nav.PathReader : null;
         EntityCache.Entry? best = null;
         var bestD2 = radius * radius;
         foreach (var entity in ctx.Entities.Entries.Values)
         {
             if (!TargetEligibility.IsEligible(entity) || EnemyIgnoreList.IsIgnored(entity.Name) || skip?.Invoke(entity.Id) == true) continue;
+            
+            if (pf is not null && !BubblesBot.Core.Pathfinding.PathSmoother.HasLineOfSight(pf, player.X, player.Y, entity.GridPosition.X, entity.GridPosition.Y, minValue: 1))
+                continue;
             var dx = (float)(entity.GridPosition.X - player.X);
             var dy = (float)(entity.GridPosition.Y - player.Y);
             var d = MathF.Sqrt(dx * dx + dy * dy);

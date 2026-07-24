@@ -536,7 +536,7 @@ public sealed class BotApp : IDisposable, Web.IControlSurface
             liveSkills,
             events = Diagnostics.EventLog.Recent(80).Select(e => new {
                 seq      = e.Seq,
-                t        = e.At.ToString("HH:mm:ss.fff"),
+                t        = e.At.ToLocalTime().ToString("HH:mm:ss.fff"),
                 category = e.Category,
                 eventType = e.EventType,
                 severity = e.Severity.ToString(),

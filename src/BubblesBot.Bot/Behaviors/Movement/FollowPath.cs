@@ -27,7 +27,8 @@ namespace BubblesBot.Bot.Behaviors.Movement;
 public sealed class FollowPath : IBehavior
 {
     /// <summary>Player must be within this many grid cells of the current path step to advance.</summary>
-    private const float ArrivalRadius = 6f;
+    private const float SmoothedArrivalRadius = 6f;
+    private const float RawArrivalRadius = 2f;
 
     /// <summary>If the goal moves by more than this many cells, recompute the path.</summary>
     private const float GoalMovementThreshold = 8f;
@@ -71,6 +72,7 @@ public sealed class FollowPath : IBehavior
     private int _astarW, _astarH;
     private IReadOnlyList<PathCell>? _path;
     private int _pathIndex;
+    private bool _isSmoothed;
     private Vector2i _pathGoal;
     private TimeSpan _pathBuiltAt;
 
@@ -185,7 +187,8 @@ public sealed class FollowPath : IBehavior
                 LastDecision = "no path";
                 return LastStatus = BehaviorStatus.Failure;
             }
-            _path        = now < _walkAroundUntil ? raw.Cells : PathSmoother.Smooth(pf, raw.Cells);
+            _isSmoothed  = now >= _walkAroundUntil;
+            _path        = !_isSmoothed ? raw.Cells : PathSmoother.Smooth(pf, raw.Cells);
             _pathIndex   = 1;        // skip cell 0 (current player position)
             _pathGoal    = goal.Value;
             _pathBuiltAt = now;
@@ -201,9 +204,11 @@ public sealed class FollowPath : IBehavior
         // the fresh path in the same tick. Checking nodes sequentially (never global-nearest)
         // keeps switchbacks from collapsing the route through walls. Stop at Blink anchors so
         // the executor gets a chance to fire the dash on each one.
+        var arrivalRadius = _isSmoothed ? SmoothedArrivalRadius : RawArrivalRadius;
+
         while (_pathIndex < _path!.Count - 1
             && _path[_pathIndex].Action != StepAction.Blink
-            && (Distance(player, _path[_pathIndex]) <= ArrivalRadius
+            && (Distance(player, _path[_pathIndex]) <= arrivalRadius
                 || WalkedPast(player, _path[_pathIndex], _path[_pathIndex + 1])))
         {
             _pathIndex++;
@@ -217,7 +222,7 @@ public sealed class FollowPath : IBehavior
         while (_pathIndex < _path!.Count - 1
             && _path[_pathIndex].Action != StepAction.Blink
             && _path[_pathIndex + 1].Action == StepAction.Blink
-            && Distance(player, _path[_pathIndex]) <= ArrivalRadius * 3f)
+            && Distance(player, _path[_pathIndex]) <= arrivalRadius * 3f)
         {
             _pathIndex++;
         }
